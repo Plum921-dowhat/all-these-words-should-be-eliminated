@@ -1,0 +1,215 @@
+// LexiLearn — English vocab (CET-4/6, KY) + graded reading platform
+// Database: SQLite (local dev, zero external dependency). The Postgres-style
+// enums are stored as STRING columns; allowed values live in src/lib/enums.ts.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client-new"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  targetExam   String @default("CET4")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wordbooks          UserWordbook[]
+  reviewLogs         ReviewLog[]
+  articleProgress    UserArticleProgress[]
+  articleWords       UserArticleWord[]
+  wordLibraries      WordLibrary[]
+  stats              UserStats?
+}
+
+// ---- Dictionary ----
+model Word {
+  id           String  @id @default(uuid())
+  headword     String  @unique // 规范词形，小写
+  phoneticUk   String?
+  phoneticUs   String?
+  audioUkUrl   String?
+  audioUsUrl   String?
+  pos          String? // 词性 JSON string: [{"pos":"n.","def":"..."}]
+  definitionCn String? // 中文释义
+  definitionEn String? // 英文释义
+  examples     String? // JSON string: [{en, zh}]
+  difficulty   Int     @default(3) // 1~5 难度等级
+  freq         Int     @default(0) // 词频
+
+  wordExams     WordExam[]
+  wordbooks     WordbookWord[]
+  userWordbooks UserWordbook[]
+  articleWords  ArticleWord[]
+  userArticle   UserArticleWord[]
+  libraryWords  WordLibraryWord[]
+  reviewLogs    ReviewLog[]
+}
+
+// Many-to-many: a word can belong to multiple exams
+model WordExam {
+  wordId   String   @map("word_id")
+  examType String   @map("exam_type")
+  word     Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([wordId, examType])
+  @@index([examType])
+}
+
+// ---- Wordbooks (词书) ----
+model Wordbook {
+  id        String   @id @default(uuid())
+  title     String
+  examType  String  @map("exam_type")
+  level     Int      @default(1) // 1~5 难度档
+  desc      String?
+  isSystem  Boolean  @default(true) // 系统词书 vs 自建
+  createdAt DateTime @default(now())
+
+  words WordbookWord[]
+
+  @@unique([title])
+}
+
+model WordbookWord {
+  wordbookId String  @map("wordbook_id")
+  wordId     String  @map("word_id")
+  order      Int     @default(0)
+  wordbook   Wordbook @relation(fields: [wordbookId], references: [id], onDelete: Cascade)
+  word       Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([wordbookId, wordId])
+  @@index([wordbookId])
+}
+
+// ---- User-imported word libraries (独立的导入词库) ----
+model WordLibrary {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  desc      String?
+  level     String   @default("COMMON") // 难度/考试类型，沿用 ExamType
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  words     WordLibraryWord[]
+
+  @@index([userId])
+}
+
+model WordLibraryWord {
+  libraryId String @map("library_id")
+  wordId    String @map("word_id")
+  order     Int    @default(0)
+  library   WordLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  word      Word       @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([libraryId, wordId])
+  @@index([libraryId])
+}
+
+// ---- User learning state (SRS core) ----
+model UserWordbook {
+  id            String     @id @default(uuid())
+  userId        String     @map("user_id")
+  wordId        String     @map("word_id")
+  status        String     @default("NEW")
+  familiarity   Int        @default(0) // 0~5 熟悉度
+  repetitions   Int        @default(0) // 连续答对次数
+  easeFactor    Float      @default(2.5) // SM-2 难度系数
+  intervalDays  Int        @default(0)
+  nextReviewAt  DateTime   @default(now()) @map("next_review_at")
+  lastReviewedAt DateTime? @map("last_reviewed_at")
+  lastGrade     String?    @map("last_grade") // 最近一次复习评分: AGAIN/HARD/GOOD/EASY，未复习则为空
+  createdAt     DateTime   @default(now())
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word          Word       @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wordId])
+  @@index([userId, nextReviewAt])
+  @@index([userId, lastGrade])
+}
+
+model ReviewLog {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  wordId      String       @map("word_id")
+  result      String
+  durationMs  Int          @default(0)
+  createdAt   DateTime     @default(now())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word        Word         @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ---- Graded reading ----
+model Article {
+  id          String   @id @default(uuid())
+  title       String
+  level       String   // 对应考试/难度
+  cefr        Int      @default(1) // CEFR-like 1~5
+  content     String   // 正文（含段落）
+  source      String?
+  wordCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  words     ArticleWord[]
+  progress  UserArticleProgress[]
+  userWords UserArticleWord[]
+}
+
+model ArticleWord {
+  articleId String  @map("article_id")
+  wordId    String  @map("word_id")
+  freq      Int     @default(1)
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  word      Word    @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, wordId])
+  @@index([articleId])
+}
+
+model UserArticleProgress {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  articleId   String   @map("article_id")
+  progress    Float    @default(0) // 0~1
+  finished    Boolean  @default(false)
+  lastReadAt  DateTime @default(now()) @map("last_read_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId])
+}
+
+// Words the user marked while reading -> auto added to SRS queue
+model UserArticleWord {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  articleId String   @map("article_id")
+  wordId    String   @map("word_id")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId, wordId])
+  @@index([userId, wordId])
+}
+
+// ---- Stats ----
+model UserStats {
+  userId        String @id @map("user_id")
+  totalLearned  Int    @default(0)
+  mastered      Int    @default(0)
+  todayReviewed Int    @default(0)
+  streakDays    Int    @default(0)
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

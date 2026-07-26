@@ -1,0 +1,254 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
+import { speak } from "@/lib/tts";
+
+interface WbItem {
+  word: {
+    id: string;
+    headword: string;
+    phoneticUs?: string | null;
+    audioUsUrl?: string | null;
+    definitionCn?: string | null;
+    pos?: string | null;
+  };
+  status: string;
+  familiarity: number;
+  nextReviewAt: string;
+  lastGrade?: string | null;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  NEW: "未学", LEARNING: "学习中", REVIEWING: "复习中", MASTERED: "已掌握",
+};
+
+const GRADE_LABEL: Record<string, string> = {
+  AGAIN: "忘记", HARD: "困难", GOOD: "良好", EASY: "简单",
+};
+
+type TabKey = "全部" | "忘记" | "困难" | "良好" | "简单" | "未学";
+const TABS: TabKey[] = ["全部", "忘记", "困难", "良好", "简单", "未学"];
+
+function gradeToTab(g?: string | null): TabKey {
+  if (g === "AGAIN") return "忘记";
+  if (g === "HARD") return "困难";
+  if (g === "GOOD") return "良好";
+  if (g === "EASY") return "简单";
+  return "未学";
+}
+
+interface AddForm {
+  headword: string;
+  phoneticUk: string;
+  phoneticUs: string;
+  definitionCn: string;
+  definitionEn: string;
+}
+
+export default function WordbookPage() {
+  const { status } = useSession();
+  const [items, setItems] = useState<WbItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<TabKey>("全部");
+
+  // 手动添加表单状态
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<AddForm>({
+    headword: "", phoneticUk: "", phoneticUs: "", definitionCn: "", definitionEn: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function load() {
+    const res = await fetch("/api/words/list");
+    if (res.ok) {
+      const d = await res.json();
+      setItems(d.items ?? []);
+    }
+  }
+
+  useEffect(() => {
+    if (status !== "authenticated") { setLoading(false); return; }
+    load().finally(() => setLoading(false));
+  }, [status]);
+
+  // 统计各类数量
+  const counts = useMemo(() => {
+    const c: Record<TabKey, number> = { 全部: items.length, 忘记: 0, 困难: 0, 良好: 0, 简单: 0, 未学: 0 };
+    for (const it of items) c[gradeToTab(it.lastGrade)] += 1;
+    return c;
+  }, [items]);
+
+  const filtered = useMemo(
+    () => (tab === "全部" ? items : items.filter((it) => gradeToTab(it.lastGrade) === tab)),
+    [items, tab]
+  );
+
+  async function removeWord(wordId: string) {
+    if (!window.confirm("确定从生词本中删除该单词吗？")) return;
+    const res = await fetch(`/api/words/${wordId}`, { method: "DELETE" });
+    if (res.ok) setItems((prev) => prev.filter((it) => it.word.id !== wordId));
+  }
+
+  // 输入单词后失焦时，查词库自动预填释义/音标
+  async function onHeadwordBlur() {
+    const w = form.headword.trim();
+    if (!w) return;
+    const res = await fetch(`/api/words/lookup?word=${encodeURIComponent(w)}`);
+    const data = await res.json();
+    if (data.word) {
+      setForm((f) => ({
+        ...f,
+        phoneticUk: data.word.phoneticUk ?? f.phoneticUk,
+        phoneticUs: data.word.phoneticUs ?? f.phoneticUs,
+        definitionCn: data.word.definitionCn ?? f.definitionCn,
+        definitionEn: data.word.definitionEn ?? f.definitionEn,
+      }));
+    }
+  }
+
+  async function addWord(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/words/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMsg({ ok: true, text: data.alreadyExisted ? "该词已在生词本中（已为你置顶显示）" : "添加成功！" });
+        setForm({ headword: "", phoneticUk: "", phoneticUs: "", definitionCn: "", definitionEn: "" });
+        await load();
+      } else {
+        setMsg({ ok: false, text: res.status === 400 ? "请输入有效的单词" : "添加失败，请重试" });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (status === "unauthenticated") {
+    return <div className="card mt-10 text-center">请先 <Link href="/login" className="text-brand-600">登录</Link> 查看生词本。</div>;
+  }
+  if (loading) return <p className="mt-10 text-center text-slate-400">加载中…</p>;
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-800">我的生词本（{items.length}）</h1>
+        <button onClick={() => setShowForm((s) => !s)} className="btn-primary">
+          {showForm ? "收起" : "＋ 添加单词"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={addWord} className="card mb-6 space-y-3">
+          <div>
+            <label className="mb-1 block text-sm text-slate-500">单词（必填）</label>
+            <input
+              value={form.headword}
+              onChange={(e) => setForm((f) => ({ ...f, headword: e.target.value }))}
+              onBlur={onHeadwordBlur}
+              placeholder="如 apple"
+              className="input w-full"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm text-slate-500">英式音标</label>
+              <input value={form.phoneticUk} onChange={(e) => setForm((f) => ({ ...f, phoneticUk: e.target.value }))} placeholder="/ˈæp.əl/" className="input w-full" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-slate-500">美式音标</label>
+              <input value={form.phoneticUs} onChange={(e) => setForm((f) => ({ ...f, phoneticUs: e.target.value }))} placeholder="/ˈæp.əl/" className="input w-full" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-500">中文释义</label>
+            <input value={form.definitionCn} onChange={(e) => setForm((f) => ({ ...f, definitionCn: e.target.value }))} placeholder="苹果；n." className="input w-full" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-500">英文释义（可选）</label>
+            <input value={form.definitionEn} onChange={(e) => setForm((f) => ({ ...f, definitionEn: e.target.value }))} placeholder="a round fruit..." className="input w-full" />
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={submitting} className="btn-primary">
+              {submitting ? "添加中…" : "添加到生词本"}
+            </button>
+            {msg && (
+              <span className={msg.ok ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{msg.text}</span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">提示：输入单词并移开光标后，若词库已有该词会自动填充音标与释义；也可手动补充。</p>
+        </form>
+      )}
+
+      {/* 统计 chips + 标签页 */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={
+              "rounded-full px-3 py-1 text-sm transition " +
+              (tab === t
+                ? "bg-brand-600 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+            }
+          >
+            {t} {counts[t]}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="card text-center text-slate-500">
+          {items.length === 0
+            ? <>还没有生词。去<Link href="/reading" className="text-brand-600">分级阅读</Link>点击生词，或点击右上角「＋ 添加单词」。</>
+            : "该分类下暂无单词。"}
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {filtered.map((it) => (
+          <div key={it.word.id} className="card">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">{it.word.headword}</span>
+                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                    {STATUS_LABEL[it.status] ?? it.status}
+                  </span>
+                  {it.lastGrade && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                      {GRADE_LABEL[it.lastGrade]}
+                    </span>
+                  )}
+                </div>
+                {it.word.definitionCn && <p className="mt-1 text-sm text-slate-600">{it.word.definitionCn}</p>}
+                <p className="mt-1 text-xs text-slate-400">
+                  熟悉度 {it.familiarity}/5 · 下次复习 {new Date(it.nextReviewAt).toLocaleDateString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => removeWord(it.word.id)}
+                  title="从生词本删除"
+                  className="btn-ghost px-2 py-1 text-slate-400 hover:text-red-600"
+                >
+                  ✕
+                </button>
+                <button onClick={() => speak(it.word.headword)} className="btn-ghost px-2 py-1">🔊</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

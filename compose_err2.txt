@@ -1,0 +1,4 @@
+ Container lexilearn-postgres Recreate 
+ Container lexilearn-postgres Recreated 
+ Container lexilearn-postgres Starting 
+ Container lexilearn-postgres Started 
