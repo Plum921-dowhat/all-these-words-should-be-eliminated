@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -46,6 +46,30 @@ export default function LibraryDetailPage() {
   const isRoot = id === ROOT_LIBRARY_ID;
   const debouncedRoot = useDebounced(rootQuery, 150);
   const debouncedWord = useDebounced(wordQuery, 150);
+
+  const MAX_ROOT_RESULTS = 100;
+  const rootFiltered = useMemo(() => {
+    const q = debouncedRoot.trim().toLowerCase();
+    if (q.length < 2) return rootItems; // 单字符不搜索，避免命中全量导致过载
+    return rootItems.filter((it) => {
+      const fields =
+        rootField === "key"
+          ? [it.key]
+          : rootField === "meaning"
+          ? [it.entry.meaning ?? ""]
+          : rootField === "example"
+          ? (it.entry.example ?? [])
+          : [it.key, it.entry.meaning ?? "", ...(it.entry.example ?? [])];
+      return fields.some((f) => (f ?? "").toLowerCase().includes(q));
+    });
+  }, [rootItems, debouncedRoot, rootField]);
+
+  const rootShown = rootFiltered.slice(0, MAX_ROOT_RESULTS);
+  const rootTruncated = rootFiltered.length > rootShown.length;
+  // 仅当用户输入了 1 个字符时才提示（空查询正常展示全量）
+  const rootIsTooShort = debouncedRoot.trim().length === 1;
+  // 单字符时不高亮，避免全量卡片被高亮成海量节点
+  const rootHL = rootIsTooShort ? "" : debouncedRoot;
 
   async function load() {
     try {
@@ -134,99 +158,89 @@ export default function LibraryDetailPage() {
               ))}
             </div>
           </div>
-          {(() => {
-            const q = debouncedRoot.trim().toLowerCase();
-            const filtered = q
-              ? rootItems.filter((it) => {
-                  const fields =
-                    rootField === "key"
-                      ? [it.key]
-                      : rootField === "meaning"
-                      ? [it.entry.meaning ?? ""]
-                      : rootField === "example"
-                      ? (it.entry.example ?? [])
-                      : [it.key, it.entry.meaning ?? "", ...(it.entry.example ?? [])];
-                  return fields.some((f) => (f ?? "").toLowerCase().includes(q));
-                })
-              : rootItems;
-            return (
-              <>
-                <p className="mb-2 text-xs text-slate-400">找到 {filtered.length} / {rootItems.length} 条</p>
-                {filtered.length === 0 ? (
-                  <div className="card text-center text-slate-500">未找到匹配的词根 / 词缀。</div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {filtered.map((it) => {
-                      const syns = splitRefs(it.entry.synonyms);
-                      const ants = splitRefs(it.entry.antonyms);
-                      return (
-                        <div key={it.key} className="card">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-lg font-semibold">{highlight(it.key, debouncedRoot)}</span>
-                            {it.entry.class && (
-                              <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-                                {it.entry.class}
-                              </span>
-                            )}
-                            {it.entry.origin && (
-                              <span className="text-xs text-slate-400">{it.entry.origin}</span>
-                            )}
+          <p className="mb-2 text-xs text-slate-400">找到 {rootFiltered.length} / {rootItems.length} 条</p>
+          {rootIsTooShort && (
+            <div className="card mb-3 text-center text-sm text-amber-600">
+              请输入至少 2 个字符以搜索（单字符匹配量过大）。
+            </div>
+          )}
+          {!rootIsTooShort && rootFiltered.length === 0 ? (
+            <div className="card text-center text-slate-500">未找到匹配的词根 / 词缀。</div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {rootShown.map((it) => {
+                const syns = splitRefs(it.entry.synonyms);
+                const ants = splitRefs(it.entry.antonyms);
+                return (
+                  <div key={it.key} className="card card-flow">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-lg font-semibold">{highlight(it.key, rootHL)}</span>
+                      {it.entry.class && (
+                        <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+                          {it.entry.class}
+                        </span>
+                      )}
+                      {it.entry.origin && (
+                        <span className="text-xs text-slate-400">{it.entry.origin}</span>
+                      )}
+                    </div>
+                    {it.entry.meaning && (
+                      <p className="mt-1 text-sm text-slate-600">{highlight(it.entry.meaning, rootHL)}</p>
+                    )}
+                    {it.entry.example && it.entry.example.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {it.entry.example.map((ex) => (
+                          <span
+                            key={ex}
+                            className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+                          >
+                            {highlight(ex, rootHL)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {(syns.length > 0 || ants.length > 0) && (
+                      <div className="mt-2 space-y-1 text-xs">
+                        {syns.length > 0 && (
+                          <div>
+                            <span className="text-slate-400">同义：</span>
+                            {syns.map((r) => (
+                              <button
+                                key={r}
+                                onClick={() => setRootQuery(r)}
+                                className="ml-1 text-brand-600 underline"
+                              >
+                                {r}
+                              </button>
+                            ))}
                           </div>
-                          {it.entry.meaning && (
-                            <p className="mt-1 text-sm text-slate-600">{highlight(it.entry.meaning, debouncedRoot)}</p>
-                          )}
-                          {it.entry.example && it.entry.example.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {it.entry.example.map((ex) => (
-                                <span
-                                  key={ex}
-                                  className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-                                >
-                                  {highlight(ex, debouncedRoot)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {(syns.length > 0 || ants.length > 0) && (
-                            <div className="mt-2 space-y-1 text-xs">
-                              {syns.length > 0 && (
-                                <div>
-                                  <span className="text-slate-400">同义：</span>
-                                  {syns.map((r) => (
-                                    <button
-                                      key={r}
-                                      onClick={() => setRootQuery(r)}
-                                      className="ml-1 text-brand-600 underline"
-                                    >
-                                      {r}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                              {ants.length > 0 && (
-                                <div>
-                                  <span className="text-slate-400">反义：</span>
-                                  {ants.map((r) => (
-                                    <button
-                                      key={r}
-                                      onClick={() => setRootQuery(r)}
-                                      className="ml-1 text-brand-600 underline"
-                                    >
-                                      {r}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                        )}
+                        {ants.length > 0 && (
+                          <div>
+                            <span className="text-slate-400">反义：</span>
+                            {ants.map((r) => (
+                              <button
+                                key={r}
+                                onClick={() => setRootQuery(r)}
+                                className="ml-1 text-brand-600 underline"
+                              >
+                                {r}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </>
-            );
-          })()}
+                );
+              })}
+            </div>
+          )}
+          {rootTruncated && (
+            <p className="mt-3 text-xs text-slate-400">
+              已显示前 {rootShown.length} 条，共 {rootFiltered.length} 条匹配，请输入更精确的查询词。
+            </p>
+          )}
         </>
       ) : (
         <>
@@ -254,9 +268,9 @@ export default function LibraryDetailPage() {
                   {filtered.length === 0 ? (
                     <div className="card text-center text-slate-500">未找到匹配单词。</div>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {filtered.map((w) => (
-                        <div key={w.id} className="card">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {filtered.map((w) => (
+                      <div key={w.id} className="card card-flow">
                           <div className="flex items-start justify-between">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">

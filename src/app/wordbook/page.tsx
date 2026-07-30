@@ -71,6 +71,10 @@ export default function WordbookPage() {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [batchMsg, setBatchMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // 批量管理模式状态
+  const [manageMode, setManageMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
   async function load() {
     const res = await fetch("/api/words/list");
     if (res.ok) {
@@ -107,6 +111,47 @@ export default function WordbookPage() {
     if (!window.confirm("确定从生词本中删除该单词吗？")) return;
     const res = await fetch(`/api/words/${wordId}`, { method: "DELETE" });
     if (res.ok) setItems((prev) => prev.filter((it) => it.word.id !== wordId));
+  }
+
+  // 批量管理：选择 / 全选 / 批量删除
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const ids = filtered.map((it) => it.word.id);
+      const allOn = ids.length > 0 && ids.every((id) => next.has(id));
+      if (allOn) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function exitManage() {
+    setManageMode(false);
+    setSelected(new Set());
+  }
+
+  async function deleteSelected() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`确定删除选中的 ${ids.length} 个单词吗？`)) return;
+    const res = await fetch("/api/words/batch", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.ok) {
+      setItems((prev) => prev.filter((it) => !selected.has(it.word.id)));
+      setSelected(new Set());
+    }
   }
 
   // 输入单词后失焦时，查词库自动预填释义/音标
@@ -205,6 +250,16 @@ export default function WordbookPage() {
           >
             {showBatch ? "收起批量" : "＋ 批量 JSON 导入"}
           </button>
+          <button
+            onClick={() => (manageMode ? exitManage() : setManageMode(true))}
+            className={
+              manageMode
+                ? "btn-primary"
+                : "btn-ghost border border-brand-200 text-brand-700"
+            }
+          >
+            {manageMode ? "退出批量管理" : "批量管理"}
+          </button>
         </div>
       </div>
 
@@ -280,6 +335,25 @@ export default function WordbookPage() {
         </form>
       )}
 
+      {manageMode && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
+          <button onClick={toggleAll} className="btn-ghost border border-brand-300 text-brand-700">
+            全选 / 取消全选
+          </button>
+          <span className="text-sm text-brand-700">已选 {selected.size} 个</span>
+          <button
+            onClick={deleteSelected}
+            disabled={selected.size === 0}
+            className="btn-primary disabled:opacity-50"
+          >
+            删除选中
+          </button>
+          <button onClick={exitManage} className="btn-ghost text-slate-500">
+            退出
+          </button>
+        </div>
+      )}
+
       {/* 搜索框 */}
       <div className="mb-4">
         <input
@@ -318,9 +392,17 @@ export default function WordbookPage() {
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         {filtered.map((it) => (
-          <div key={it.word.id} className="card">
+          <div key={it.word.id} className="card card-flow">
             <div className="flex items-start justify-between">
-              <div>
+              {manageMode && (
+                <input
+                  type="checkbox"
+                  className="mt-1 mr-2 h-4 w-4"
+                  checked={selected.has(it.word.id)}
+                  onChange={() => toggleSelect(it.word.id)}
+                />
+              )}
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-semibold">{highlight(it.word.headword, debouncedQuery)}</span>
                   <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
@@ -339,13 +421,15 @@ export default function WordbookPage() {
                 </p>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => removeWord(it.word.id)}
-                  title="从生词本删除"
-                  className="btn-ghost px-2 py-1 text-slate-400 hover:text-red-600"
-                >
-                  ✕
-                </button>
+                {!manageMode && (
+                  <button
+                    onClick={() => removeWord(it.word.id)}
+                    title="从生词本删除"
+                    className="btn-ghost px-2 py-1 text-slate-400 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                )}
                 <button onClick={() => speak(it.word.headword)} className="btn-ghost px-2 py-1">🔊</button>
               </div>
             </div>
