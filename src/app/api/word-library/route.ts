@@ -6,6 +6,7 @@ import type { ExamType } from "@/lib/enums";
 import {
   normalizeWordEntry,
   buildWordData,
+  parseWordLine,
   tryParseJson,
   extractWordList,
   asExamType,
@@ -36,7 +37,8 @@ export async function GET() {
 }
 
 // Import a word library from pasted text or an uploaded file's text content.
-// Accepted line format: `word` or `word | 中文释义` (also supports `,` or tab).
+// Accepted line formats: `word`, `word | 中文释义`, or dictionary style
+// `word [音标] 词性. 释义` (multi-sense splits into structured `pos`).
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -100,23 +102,17 @@ export async function POST(req: NextRequest) {
       wordIds.push(word.id);
     }
   } else {
-    // Legacy plain-text line format: `word` or `word | 中文释义`.
+    // Plain-text line format: `word | 释义` or `word [音标] 词性. 释义`.
     for (const lineRaw of raw.split(/\r?\n/)) {
-      const line = lineRaw.trim();
-      if (!line) continue;
-
-      const m = line.match(/^(\S+)\s*[\|，,\t]\s*(.*)$/);
-      const headRaw = m ? m[1] : line;
-      const def = m && m[2] ? m[2].trim() : null;
-      const head = (headRaw.trim().toLowerCase().replace(/[^a-z'-]/g, ""));
-      if (!head || seen.has(head)) continue;
-
+      const input = parseWordLine(lineRaw);
+      if (!input || seen.has(input.headword)) continue;
+      const { create, update } = buildWordData(input);
       const word = await prisma.word.upsert({
-        where: { headword: head },
-        create: { headword: head, definitionCn: def },
-        update: def ? { definitionCn: def } : {},
+        where: { headword: input.headword },
+        create: create as any,
+        update: update as any,
       });
-      seen.add(head);
+      seen.add(input.headword);
       wordIds.push(word.id);
     }
   }

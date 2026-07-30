@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { speak } from "@/lib/tts";
 import { WordFields } from "@/components/WordFields";
@@ -32,6 +32,7 @@ const LEVEL_LABEL: Record<string, string> = {
 
 export default function LibraryDetailPage() {
   const { id } = useParams() as { id: string };
+  const router = useRouter();
   const { status } = useSession();
   const [lib, setLib] = useState<LibraryInfo | null>(null);
   const [words, setWords] = useState<Word[]>([]);
@@ -41,6 +42,8 @@ export default function LibraryDetailPage() {
   const [wordQuery, setWordQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const isRoot = id === ROOT_LIBRARY_ID;
@@ -108,6 +111,37 @@ export default function LibraryDetailPage() {
     }
   }
 
+  async function addOne(word: Word) {
+    setAddingId(word.id);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/words/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ headword: word.headword }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setAddedIds((prev) => new Set(prev).add(word.id));
+        setMsg({ ok: true, text: d.alreadyExisted ? "该词已在生词本中" : `已加入「${word.headword}」到生词本` });
+      } else {
+        setMsg({ ok: false, text: d.error ?? "操作失败" });
+      }
+    } finally {
+      setAddingId(null);
+    }
+  }
+
+  async function removeLib() {
+    if (!confirm("确定删除该词库？仅删除词库与单词的关联，不影响生词本中的学习记录。")) return;
+    const res = await fetch(`/api/word-library/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      router.push("/word-library");
+    } else {
+      setMsg({ ok: false, text: "删除失败" });
+    }
+  }
+
   if (status === "unauthenticated") {
     return <div className="card mt-10 text-center">请先 <Link href="/login" className="text-brand-600">登录</Link> 查看单词库。</div>;
   }
@@ -125,9 +159,14 @@ export default function LibraryDetailPage() {
           </p>
         </div>
         {!isRoot && (
-          <button onClick={addAll} disabled={adding} className="btn-primary">
-            {adding ? "加入中…" : "全部加入生词本"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={addAll} disabled={adding} className="btn-primary">
+              {adding ? "加入中…" : "全部加入生词本"}
+            </button>
+            <button onClick={removeLib} className="btn-ghost text-red-600 hover:bg-red-50">
+              🗑 删除词库
+            </button>
+          </div>
         )}
       </div>
 
@@ -280,7 +319,16 @@ export default function LibraryDetailPage() {
                               {w.definitionCn && <p className="mt-1 text-sm text-slate-600">{highlight(w.definitionCn, debouncedWord)}</p>}
                               <WordFields pos={w.pos} examples={w.examples} />
                             </div>
-                            <button onClick={() => speak(w.headword)} className="btn-ghost px-2 py-1">🔊</button>
+                            <div className="flex shrink-0 flex-col items-end gap-2">
+                              <button onClick={() => speak(w.headword)} className="btn-ghost px-2 py-1">🔊</button>
+                              <button
+                                onClick={() => addOne(w)}
+                                disabled={addingId === w.id || addedIds.has(w.id)}
+                                className={`btn-ghost px-2 py-1 ${addedIds.has(w.id) ? "text-emerald-600" : "text-brand-600"}`}
+                              >
+                                {addedIds.has(w.id) ? "✓ 已加入" : addingId === w.id ? "加入中…" : "＋ 生词本"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}

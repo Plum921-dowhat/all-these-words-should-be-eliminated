@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { ROOT_LIBRARY_ID } from "@/lib/wordroot";
@@ -36,6 +36,7 @@ export default function WordLibraryPage() {
   const [form, setForm] = useState<ImportForm>({ title: "", level: "COMMON", desc: "", content: "" });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [query, setQuery] = useState("");
 
   async function load() {
     const res = await fetch("/api/word-library");
@@ -44,6 +45,30 @@ export default function WordLibraryPage() {
       setLibs(d.libraries ?? []);
     }
   }
+
+  async function remove(id: string) {
+    if (!confirm("确定删除该词库？仅删除词库与单词的关联，不影响生词本中的学习记录。")) return;
+    const res = await fetch(`/api/word-library/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setMsg({ ok: true, text: "已删除词库" });
+      await load();
+    } else {
+      setMsg({ ok: false, text: "删除失败" });
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return libs;
+    return libs.filter((l) => {
+      const label = LEVEL_LABEL[l.level] ?? l.level;
+      return (
+        l.title.toLowerCase().includes(q) ||
+        (l.desc ?? "").toLowerCase().includes(q) ||
+        label.toLowerCase().includes(q)
+      );
+    });
+  }, [libs, query]);
 
   useEffect(() => {
     if (status !== "authenticated") { setLoading(false); return; }
@@ -114,6 +139,13 @@ export default function WordLibraryPage() {
         </button>
       </div>
 
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="搜索词库名称 / 难度（如 六级、考研）…"
+        className="input mb-4 w-full"
+      />
+
       {showForm && (
         <form onSubmit={submit} className="card mb-6 space-y-3">
           <div>
@@ -150,11 +182,11 @@ export default function WordLibraryPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-500">单词清单（每行一个 `单词 | 中文释义`，也可粘贴 JSON 数组）</label>
+            <label className="mb-1 block text-sm text-slate-500">单词清单（支持三种格式，每行一个）</label>
             <textarea
               value={form.content}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-              placeholder={'apple | 苹果\nbook | 书\n\n或 JSON：\n{"title":"考研核心词","words":[{"headword":"apple","definitionCn":"苹果"}]}'}
+              placeholder={'abandon [əˈbændən] v. 1. 抛弃，放弃 2. 离弃\nabnormal [æbˈnɔːməl] adj. 不正常的\n\n或：apple | 苹果\nbook | 书\n\n或 JSON：\n{"title":"考研核心词","words":[{"headword":"apple","definitionCn":"苹果"}]}'}
               rows={8}
               className="input w-full font-mono text-sm"
               required
@@ -181,18 +213,30 @@ export default function WordLibraryPage() {
           还没有导入的词库。点击右上角「＋ 导入词库」，粘贴单词清单或上传 .txt / .csv / .json 文件。
         </div>
       )}
+      {libs.length > 0 && filtered.length === 0 && (
+        <div className="card mt-4 text-center text-slate-500">
+          未找到匹配「{query}」的词库。
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
-        {libs.map((l) => (
-          <Link key={l.id} href={`/word-library/${l.id}`} className="card hover:border-brand-300 hover:shadow">
-            <div className="flex items-center justify-between">
-              <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-                {LEVEL_LABEL[l.level] ?? l.level}
-              </span>
-              <span className="text-xs text-slate-400">{l._count.words} 词</span>
-            </div>
-            <h3 className="mt-2 font-semibold text-slate-800">{l.title}</h3>
-            {l.desc && <p className="mt-1 text-xs text-slate-400">{l.desc}</p>}
-          </Link>
+        {filtered.map((l) => (
+          <div key={l.id} className="card hover:border-brand-300 hover:shadow relative flex items-center justify-between gap-3">
+            <Link href={`/word-library/${l.id}`} className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+                  {LEVEL_LABEL[l.level] ?? l.level}
+                </span>
+                <span className="text-xs text-slate-400">{l._count.words} 词</span>
+              </div>
+              <h3 className="mt-2 font-semibold text-slate-800">{l.title}</h3>
+              {l.desc && <p className="mt-1 text-xs text-slate-400">{l.desc}</p>}
+            </Link>
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); remove(l.id); }}
+              title="删除词库"
+              className="btn-ghost shrink-0 px-2 py-1 text-slate-400 hover:text-red-600"
+            >🗑</button>
+          </div>
         ))}
         <Link key="roots" href={`/word-library/${ROOT_LIBRARY_ID}`} className="card hover:border-brand-300 hover:shadow">
           <div className="flex items-center justify-between">

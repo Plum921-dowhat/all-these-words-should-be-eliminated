@@ -9,6 +9,75 @@ export function normWord(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z'-]/g, "");
 }
 
+// Known part-of-speech tags, ordered longest-first so e.g. `adj.` is not
+// partially matched by a shorter tag. `\b` guards require a word boundary so
+// tags don't fire inside other words (e.g. `v.` inside `adv.`).
+const POS_TAGS = [
+  "vt.", "vi.", "v.", "n.", "adj.", "adv.", "prep.", "conj.", "pron.",
+  "num.", "int.", "art.", "aux.", "abbr.", "pl.", "sb.", "sth.",
+];
+
+// Split a `词性. 释义` remainder like
+//   "v. 1. 抛弃 2. 离弃...  n. 废除"
+// into structured [{ pos, def }] entries.
+function splitPos(rest: string): { pos: string; def: string }[] {
+  if (!rest.trim()) return [];
+  const re = new RegExp(
+    `\\b(${POS_TAGS.map((t) => t.replace(/\./g, "\\.")).join("|")})\\s*`,
+    "gi"
+  );
+  const matches = [...rest.matchAll(re)];
+  if (matches.length === 0) return [{ pos: "", def: rest.trim() }];
+  const out: { pos: string; def: string }[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const start = (m.index ?? 0) + m[0].length;
+    const end = i + 1 < matches.length ? (matches[i + 1].index ?? rest.length) : rest.length;
+    const seg = rest.slice(start, end).trim();
+    if (seg) out.push({ pos: m[1].trim(), def: seg });
+  }
+  return out;
+}
+
+// Parse one line of word text. Supports three formats:
+//   1) word | 中文释义          (separator: | ， , or tab)
+//   2) word [音标] 词性. 释义    (dictionary style, multi-sense -> structured pos)
+//   3) word                    (headword only)
+export function parseWordLine(line: string): WordInput | null {
+  const raw = line.trim();
+  if (!raw) return null;
+
+  // 1) Separator format
+  const sep = raw.match(/^(\S+)\s*[\|，,\t]\s*(.*)$/);
+  if (sep) {
+    const head = normWord(sep[1]);
+    if (!head) return null;
+    return { headword: head, definitionCn: sep[2].trim() || null };
+  }
+
+  // 2) Dictionary style: word [音标] 词性. 释义
+  const dict = raw.match(/^(\S+)\s*\[([^\]]*)\]\s*(.*)$/);
+  if (dict) {
+    const head = normWord(dict[1]);
+    if (!head) return null;
+    const phonetic = dict[2].trim() || null;
+    const rest = dict[3].trim();
+    const posList = rest ? splitPos(rest) : [];
+    const out: WordInput = { headword: head };
+    if (phonetic) out.phoneticUs = phonetic;
+    // Multi-sense goes into structured `pos`; leave `definitionCn` empty to
+    // avoid duplicating the same text in the plain-text area.
+    if (posList.length > 0) out.pos = JSON.stringify(posList);
+    else if (rest) out.definitionCn = rest;
+    return out;
+  }
+
+  // 3) Bare headword
+  const head = normWord(raw);
+  if (!head) return null;
+  return { headword: head };
+}
+
 // Try to parse `text` as JSON. Returns null when it is not valid JSON or does
 // not look like JSON (so plain-text line input falls through unchanged).
 export function tryParseJson(text: string): unknown | null {
@@ -62,50 +131,32 @@ function toJsonString(v: any): string | null {
 // Returns null when there is no usable headword.
 export function normalizeWordEntry(entry: any): WordInput | null {
   if (entry == null) return null;
+  if (typeof entry === "string") return parseWordLine(entry);
 
-  let headRaw: string;
-  let lineDefCn: string | undefined;
-  let obj: Record<string, any> | null = null;
-
-  if (typeof entry === "string") {
-    const s = entry.trim();
-    if (!s) return null;
-    const m = s.match(/^(\S+)\s*[\|，,\t]\s*(.*)$/);
-    headRaw = m ? m[1] : s;
-    lineDefCn = m && m[2] ? m[2].trim() : undefined;
-  } else if (Array.isArray(entry)) {
+  if (Array.isArray(entry)) {
     if (entry[0] == null) return null;
-    headRaw = String(entry[0]);
-    lineDefCn = entry[1] != null ? String(entry[1]).trim() : undefined;
-  } else if (typeof entry === "object") {
+    const head = normWord(String(entry[0]));
+    if (!head) return null;
+    const out: WordInput = { headword: head };
+    if (entry[1] != null) out.definitionCn = String(entry[1]).trim() || null;
+    return out;
+  }
+
+  if (typeof entry === "object") {
     const h = pickStr(entry, ["headword", "word", "term", "name", "spelling", "text"]);
     if (h == null) return null;
-    headRaw = h;
-    obj = entry;
-  } else {
-    return null;
+    const head = normWord(h);
+    if (!head) return null;
+    const out: WordInput = { headword: head };
+    out.definitionCn = pickStr(entry, ["definitionCn", "def", "meaning", "cn", "definition", "trans", "translation"])?.trim() || null;
+    out.definitionEn = pickStr(entry, ["definitionEn", "en", "defEn"])?.trim() || null;
+    out.phoneticUk = pickStr(entry, ["phoneticUk", "uk", "phonetic_uk"])?.trim() || null;
+    out.phoneticUs = pickStr(entry, ["phoneticUs", "us", "phonetic_us"])?.trim() || null;
+    out.pos = toJsonString(entry.pos);
+    out.examples = toJsonString(entry.examples);
+    return out;
   }
-
-  const head = normWord(headRaw);
-  if (!head) return null;
-
-  const out: WordInput = { headword: head };
-
-  const objCn = obj
-    ? pickStr(obj, ["definitionCn", "def", "meaning", "cn", "definition", "trans", "translation"])
-    : null;
-  const cn = objCn ?? lineDefCn ?? null;
-  out.definitionCn = cn ? cn.trim() || null : null;
-
-  if (obj) {
-    out.definitionEn = pickStr(obj, ["definitionEn", "en", "defEn"])?.trim() || null;
-    out.phoneticUk = pickStr(obj, ["phoneticUk", "uk", "phonetic_uk"])?.trim() || null;
-    out.phoneticUs = pickStr(obj, ["phoneticUs", "us", "phonetic_us"])?.trim() || null;
-    out.pos = toJsonString(obj.pos);
-    out.examples = toJsonString(obj.examples);
-  }
-
-  return out;
+  return null;
 }
 
 // Build the create/update payloads for `prisma.word.upsert`. Only non-null

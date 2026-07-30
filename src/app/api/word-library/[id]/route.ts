@@ -76,3 +76,21 @@ export async function POST(
 
   return NextResponse.json({ ok: true, added: toAdd.length });
 }
+
+// DELETE: remove the library. The `WordLibraryWord` join rows are removed by
+// the cascade rule, but the underlying `Word` rows and any wordbook study
+// records are kept intact.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const lib = await prisma.wordLibrary.findUnique({ where: { id: params.id } });
+  if (!lib || lib.userId !== session.user.id) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  await prisma.wordLibrary.delete({ where: { id: params.id } });
+  return NextResponse.json({ ok: true });
+}
