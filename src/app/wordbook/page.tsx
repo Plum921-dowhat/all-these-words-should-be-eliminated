@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { speak } from "@/lib/tts";
 import { WordFields } from "@/components/WordFields";
+import { useDebounced, highlight } from "@/lib/useSearch";
 
 interface WbItem {
   word: {
@@ -54,6 +55,7 @@ export default function WordbookPage() {
   const [items, setItems] = useState<WbItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("全部");
+  const [query, setQuery] = useState("");
 
   // 手动添加表单状态
   const [showForm, setShowForm] = useState(false);
@@ -89,10 +91,17 @@ export default function WordbookPage() {
     return c;
   }, [items]);
 
-  const filtered = useMemo(
-    () => (tab === "全部" ? items : items.filter((it) => gradeToTab(it.lastGrade) === tab)),
-    [items, tab]
-  );
+  const debouncedQuery = useDebounced(query, 150);
+  const filtered = useMemo(() => {
+    const base = tab === "全部" ? items : items.filter((it) => gradeToTab(it.lastGrade) === tab);
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(
+      (it) =>
+        (it.word.headword ?? "").toLowerCase().includes(q) ||
+        (it.word.definitionCn ?? "").toLowerCase().includes(q)
+    );
+  }, [items, tab, debouncedQuery]);
 
   async function removeWord(wordId: string) {
     if (!window.confirm("确定从生词本中删除该单词吗？")) return;
@@ -271,6 +280,17 @@ export default function WordbookPage() {
         </form>
       )}
 
+      {/* 搜索框 */}
+      <div className="mb-4">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索生词本（单词 / 释义）…"
+          className="input w-full"
+        />
+        <p className="mt-1 text-xs text-slate-400">找到 {filtered.length} / {items.length} 个</p>
+      </div>
+
       {/* 统计 chips + 标签页 */}
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -302,7 +322,7 @@ export default function WordbookPage() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold">{it.word.headword}</span>
+                  <span className="text-lg font-semibold">{highlight(it.word.headword, debouncedQuery)}</span>
                   <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                     {STATUS_LABEL[it.status] ?? it.status}
                   </span>
@@ -312,7 +332,7 @@ export default function WordbookPage() {
                     </span>
                   )}
                 </div>
-                {it.word.definitionCn && <p className="mt-1 text-sm text-slate-600">{it.word.definitionCn}</p>}
+                {it.word.definitionCn && <p className="mt-1 text-sm text-slate-600">{highlight(it.word.definitionCn, debouncedQuery)}</p>}
                 <WordFields pos={it.word.pos} examples={it.word.examples} />
                 <p className="mt-1 text-xs text-slate-400">
                   熟悉度 {it.familiarity}/5 · 下次复习 {new Date(it.nextReviewAt).toLocaleDateString()}

@@ -35,6 +35,12 @@ a {
   @apply rounded-xl bg-white p-5 shadow-sm border border-slate-100;
 }
 
+/* 多卡牌桌：屏外卡片跳过绘制/布局，避免一次性渲染大量卡片时卡顿 */
+.card-flow {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
 @layer utilities {
   .perspective {
     perspective: 1200px;

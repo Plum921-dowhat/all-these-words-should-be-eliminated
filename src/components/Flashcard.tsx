@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ReviewResult } from "@/lib/enums";
 import { speak } from "@/lib/tts";
 
@@ -16,16 +16,14 @@ export interface CardWord {
   examples?: string | null;
 }
 
-export function Flashcard({
+// Memoized so each card keeps its own flip state and is NOT re-rendered when
+// its siblings are judged (parent re-render only touches the changed card).
+export const Flashcard = memo(function Flashcard({
   word,
-  index,
-  total,
   onResult,
 }: {
   word: CardWord;
-  index: number;
-  total: number;
-  onResult: (result: ReviewResult, durationMs: number) => void;
+  onResult: (word: CardWord, result: ReviewResult, durationMs: number) => void;
 }) {
   const [flipped, setFlipped] = useState(false);
   const [start, setStart] = useState(Date.now());
@@ -46,36 +44,36 @@ export function Flashcard({
   }
 
   function handle(r: ReviewResult) {
-    onResult(r, Date.now() - start);
+    onResult(word, r, Date.now() - start);
   }
 
   return (
-    <div className="card mx-auto mt-6 max-w-xl">
+    <div className="card flex h-full flex-col">
       <div className="flex items-center justify-between text-xs text-slate-400">
-        <span>进度 {index + 1} / {total}</span>
+        <span className="truncate">{word.headword}</span>
         <button onClick={play} className="btn-ghost px-2 py-1">🔊 朗读</button>
       </div>
 
       {/* 透视容器 */}
-      <div className="perspective mt-4">
+      <div className="perspective mt-3 min-h-0 flex-1">
         <div
           onClick={flip}
-          className={`relative h-64 w-full cursor-pointer transition-transform duration-500 preserve-3d ${
+          className={`relative h-full min-h-[12rem] w-full cursor-pointer transition-transform duration-500 preserve-3d ${
             flipped ? "rotate-y-180" : ""
           }`}
         >
           {/* 正面：英文 */}
           <div className="absolute inset-0 backface-hidden flex flex-col items-center justify-center rounded-xl bg-white">
-            <h2 className="text-3xl font-bold text-slate-800">{word.headword}</h2>
+            <h2 className="text-2xl font-bold text-slate-800">{word.headword}</h2>
             <p className="mt-1 text-sm text-slate-500">
               {word.phoneticUk && <span>英 {word.phoneticUk}</span>}
               {word.phoneticUs && <span className="ml-3">美 {word.phoneticUs}</span>}
             </p>
-            <span className="mt-6 text-xs text-slate-400">点击卡片看释义 · 也可直接选择掌握程度</span>
+            <span className="mt-4 text-xs text-slate-400">点击卡片看释义</span>
           </div>
 
           {/* 背面：中文释义 + 例句 */}
-          <div className="absolute inset-0 backface-hidden rotate-y-180 flex flex-col justify-center overflow-y-auto rounded-xl bg-slate-50 p-6">
+          <div className="absolute inset-0 backface-hidden rotate-y-180 flex flex-col justify-center overflow-y-auto rounded-xl bg-slate-50 p-4">
             {posList.map((p, i) => (
               <div key={i}>
                 <span className="font-medium text-brand-700">{p.pos}</span>{" "}
@@ -99,15 +97,15 @@ export function Flashcard({
       </div>
 
       {/* 评分始终在正面显示，无需翻面 */}
-      <div className="grid grid-cols-4 gap-2 pt-4">
-        <button onClick={() => handle("AGAIN")} className="btn bg-red-50 text-red-600 hover:bg-red-100">忘记</button>
-        <button onClick={() => handle("HARD")} className="btn bg-amber-50 text-amber-600 hover:bg-amber-100">困难</button>
-        <button onClick={() => handle("GOOD")} className="btn bg-sky-50 text-sky-600 hover:bg-sky-100">良好</button>
-        <button onClick={() => handle("EASY")} className="btn bg-emerald-50 text-emerald-600 hover:bg-emerald-100">简单</button>
+      <div className="grid grid-cols-4 gap-1.5 pt-3">
+        <button onClick={() => handle("AGAIN")} className="btn bg-red-50 text-red-600 hover:bg-red-100 text-xs">忘记</button>
+        <button onClick={() => handle("HARD")} className="btn bg-amber-50 text-amber-600 hover:bg-amber-100 text-xs">困难</button>
+        <button onClick={() => handle("GOOD")} className="btn bg-sky-50 text-sky-600 hover:bg-sky-100 text-xs">良好</button>
+        <button onClick={() => handle("EASY")} className="btn bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs">简单</button>
       </div>
     </div>
   );
-}
+});
 
 function safeJson<T>(s: string): T {
   try {

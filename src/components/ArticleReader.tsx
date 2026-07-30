@@ -43,21 +43,23 @@ export function ArticleReader({
     const res = await fetch(`/api/words/lookup?word=${encodeURIComponent(word)}`);
     const data = await res.json();
     const info: LookupWord | undefined = data.word ?? undefined;
+    // 仅查询，不再自动加入；是否已在生词本由 inVocab 决定
+    setPopup({ word, info, added: !!data.inVocab, loading: false });
+  }
 
-    let added = false;
-    if (status === "authenticated") {
-      const m = await fetch("/api/words/mark", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ word, articleId }),
-      });
-      if (m.ok) {
-        added = true;
-        const mid = (await m.json()).wordId;
-        if (mid) setMarked((s) => new Set(s).add(mid));
-      }
+  async function markWord() {
+    if (!popup || popup.added || status !== "authenticated") return;
+    const word = popup.word;
+    const m = await fetch("/api/words/mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ word, articleId }),
+    });
+    if (m.ok) {
+      const mid = (await m.json()).wordId;
+      if (mid) setMarked((s) => new Set(s).add(mid));
+      setPopup((p) => (p ? { ...p, added: true } : p));
     }
-    setPopup({ word, info, added, loading: false });
   }
 
   function renderParagraph(text: string) {
@@ -109,13 +111,17 @@ export function ArticleReader({
                 {popup.info?.definitionCn && <p className="mt-2 text-slate-700">{popup.info.definitionCn}</p>}
                 {popup.info?.definitionEn && <p className="mt-1 text-sm text-slate-500">{popup.info.definitionEn}</p>}
                 {!popup.info && <p className="mt-2 text-slate-400">词库暂无该词释义。</p>}
-                <p className="mt-3 text-xs text-emerald-600">
-                  {status === "authenticated"
-                    ? popup.added
-                      ? "✓ 已加入生词本，将在复习中出现"
-                      : "已存在生词本"
-                    : "登录后可加入生词本"}
-                </p>
+                {status === "authenticated" ? (
+                  popup.added ? (
+                    <p className="mt-3 text-xs text-emerald-600">✓ 已加入生词本，将出现在复习中</p>
+                  ) : (
+                    <button onClick={markWord} className="btn mt-3 w-full bg-brand-600 text-white hover:bg-brand-700">
+                      加入生词本
+                    </button>
+                  )
+                ) : (
+                  <p className="mt-3 text-xs text-slate-400">登录后可加入生词本</p>
+                )}
               </>
             )}
           </div>
