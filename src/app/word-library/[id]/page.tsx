@@ -51,6 +51,23 @@ export default function LibraryDetailPage() {
   const debouncedWord = useDebounced(wordQuery, 150);
 
   const MAX_ROOT_RESULTS = 100;
+  const WORD_PAGE = 100;
+  const [visibleWords, setVisibleWords] = useState(WORD_PAGE);
+
+  const wordFiltered = useMemo(() => {
+    const q = debouncedWord.trim().toLowerCase();
+    return q
+      ? words.filter(
+          (w) =>
+            (w.headword ?? "").toLowerCase().includes(q) ||
+            (w.definitionCn ?? "").toLowerCase().includes(q)
+        )
+      : words;
+  }, [words, debouncedWord]);
+
+  useEffect(() => {
+    setVisibleWords(WORD_PAGE);
+  }, [debouncedWord, words]);
   const rootFiltered = useMemo(() => {
     const q = debouncedRoot.trim().toLowerCase();
     if (q.length < 2) return rootItems; // 单字符不搜索，避免命中全量导致过载
@@ -293,46 +310,53 @@ export default function LibraryDetailPage() {
             <div className="card text-center text-slate-500">该词库暂无单词。</div>
           ) : (
             (() => {
-              const q = debouncedWord.trim().toLowerCase();
-              const filtered = q
-                ? words.filter(
-                    (w) =>
-                      (w.headword ?? "").toLowerCase().includes(q) ||
-                      (w.definitionCn ?? "").toLowerCase().includes(q)
-                  )
-                : words;
+              const sliced = wordFiltered.slice(0, visibleWords);
               return (
                 <>
-                  <p className="mb-2 text-xs text-slate-400">找到 {filtered.length} / {words.length} 个单词</p>
-                  {filtered.length === 0 ? (
+                  <p className="mb-2 text-xs text-slate-400">
+                    已显示 {Math.min(visibleWords, wordFiltered.length)} / {wordFiltered.length} 个单词
+                  </p>
+                  {wordFiltered.length === 0 ? (
                     <div className="card text-center text-slate-500">未找到匹配单词。</div>
                   ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {filtered.map((w) => (
-                      <div key={w.id} className="card card-flow">
-                          <div className="flex items-start justify-between">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg font-semibold">{highlight(w.headword, debouncedWord)}</span>
-                                {w.phoneticUs && <span className="text-sm text-slate-400">/{w.phoneticUs}/</span>}
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {sliced.map((w) => (
+                          <div key={w.id} className="card card-flow">
+                            <div className="flex items-start justify-between">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg font-semibold">{highlight(w.headword, debouncedWord)}</span>
+                                  {w.phoneticUs && <span className="text-sm text-slate-400">/{w.phoneticUs}/</span>}
+                                </div>
+                                {w.definitionCn && <p className="mt-1 text-sm text-slate-600">{highlight(w.definitionCn, debouncedWord)}</p>}
+                                <WordFields pos={w.pos} examples={w.examples} />
                               </div>
-                              {w.definitionCn && <p className="mt-1 text-sm text-slate-600">{highlight(w.definitionCn, debouncedWord)}</p>}
-                              <WordFields pos={w.pos} examples={w.examples} />
-                            </div>
-                            <div className="flex shrink-0 flex-col items-end gap-2">
-                              <button onClick={() => speak(w.headword)} className="btn-ghost px-2 py-1">🔊</button>
-                              <button
-                                onClick={() => addOne(w)}
-                                disabled={addingId === w.id || addedIds.has(w.id)}
-                                className={`btn-ghost px-2 py-1 ${addedIds.has(w.id) ? "text-emerald-600" : "text-brand-600"}`}
-                              >
-                                {addedIds.has(w.id) ? "✓ 已加入" : addingId === w.id ? "加入中…" : "＋ 生词本"}
-                              </button>
+                              <div className="flex shrink-0 flex-col items-end gap-2">
+                                <button onClick={() => speak(w.headword)} className="btn-ghost px-2 py-1">🔊</button>
+                                <button
+                                  onClick={() => addOne(w)}
+                                  disabled={addingId === w.id || addedIds.has(w.id)}
+                                  className={`btn-ghost px-2 py-1 ${addedIds.has(w.id) ? "text-emerald-600" : "text-brand-600"}`}
+                                >
+                                  {addedIds.has(w.id) ? "✓ 已加入" : addingId === w.id ? "加入中…" : "＋ 生词本"}
+                                </button>
+                              </div>
                             </div>
                           </div>
+                        ))}
+                      </div>
+                      {visibleWords < wordFiltered.length && (
+                        <div className="mt-4 text-center">
+                          <button
+                            onClick={() => setVisibleWords((v) => v + WORD_PAGE)}
+                            className="btn-ghost"
+                          >
+                            加载更多（还剩 {wordFiltered.length - visibleWords} 个）
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </>
               );
