@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { speak } from "@/lib/tts";
+import { WordFields } from "@/components/WordFields";
 
 interface Word {
   id: string;
@@ -12,6 +13,7 @@ interface Word {
   phoneticUs?: string | null;
   pos?: string | null;
   definitionCn?: string | null;
+  examples?: string | null;
 }
 
 interface LibraryInfo {
@@ -93,22 +95,16 @@ export default function LibraryDetailPage() {
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         {words.map((w) => {
-          let posLabel: string | null = null;
-          try {
-            const arr = w.pos ? JSON.parse(w.pos) : null;
-            if (Array.isArray(arr) && arr[0]?.pos) posLabel = arr[0].pos;
-          } catch { /* ignore */ }
           return (
             <div key={w.id} className="card">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-semibold">{w.headword}</span>
-                    {posLabel && (
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{posLabel}</span>
-                    )}
+                    {w.phoneticUs && <span className="text-sm text-slate-400">/{w.phoneticUs}/</span>}
                   </div>
                   {w.definitionCn && <p className="mt-1 text-sm text-slate-600">{w.definitionCn}</p>}
+                  <WordFields pos={w.pos} examples={w.examples} />
                 </div>
                 <button onClick={() => speak(w.headword)} className="btn-ghost px-2 py-1">🔊</button>
               </div>

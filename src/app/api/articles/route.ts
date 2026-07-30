@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { ExamType } from "@/lib/enums";
+import {
+  tryParseJson,
+  extractArticleList,
+  asExamType,
+} from "@/lib/importJson";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -31,57 +36,136 @@ function normWord(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z'-]/g, "");
 }
 
-// Import a graded-reading article submitted by the user.
+// Turn an article object (or legacy fields) into { title, level, cefr, content, source }.
+// Per-article fields take precedence; the supplied fallback (form fields) is only
+// used when the article itself does not provide a value.
+function buildArticleInput(raw: any, fallback: {
+  title: string;
+  level: ExamType;
+  cefr: number;
+  content: string;
+  source: string;
+}) {
+  const obj = raw && typeof raw === "object" ? raw : null;
+
+  const title =
+    (obj?.title ?? obj?.name ?? obj?.heading ?? fallback.title)?.toString().trim() || "";
+
+  let bodySource: string | null = null;
+  if (obj) {
+    if (typeof obj.content === "string") bodySource = obj.content;
+    else if (typeof obj.body === "string") bodySource = obj.body;
+    else if (typeof obj.text === "string") bodySource = obj.text;
+    else if (Array.isArray(obj.content)) bodySource = obj.content.join("\n\n");
+    else if (Array.isArray(obj.paragraphs)) bodySource = obj.paragraphs.join("\n\n");
+    else if (Array.isArray(obj.body)) bodySource = obj.body.join("\n\n");
+  }
+  const content = ((bodySource ?? fallback.content) || "").trim();
+
+  const level = asExamType(
+    obj?.level ?? (fallback.level !== "COMMON" ? fallback.level : undefined),
+    "COMMON"
+  );
+  const cefr = Math.min(
+    5,
+    Math.max(1, Math.round(Number(obj?.cefr ?? obj?.level_num ?? fallback.cefr) || 1))
+  );
+  const source =
+    ((obj?.source?.toString().trim() ?? fallback.source) || "") || "用户导入";
+
+  return { title, level, cefr, content, source };
+}
+
+// Import one or more graded-reading articles submitted by the user.
+// `content` may be a plain-text body or a JSON object / array of articles.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const b = (await req.json()) as {
-    title: string;
+    title?: string;
     level?: string;
     cefr?: number;
-    content: string;
+    content?: string;
     source?: string;
   };
 
-  const title = (b.title ?? "").trim();
-  const content = (b.content ?? "").trim();
-  if (!title || !content) {
+  const rawContent = (b.content ?? "").trim();
+  if (!rawContent) {
     return NextResponse.json({ error: "标题和正文都不能为空" }, { status: 400 });
   }
 
-  const level = (b.level && VALID_LEVELS.includes(b.level as ExamType) ? b.level : "COMMON") as ExamType;
-  const cefr = Math.min(5, Math.max(1, Math.round(Number(b.cefr) || 1)));
-  const wordCount = content.match(/[a-zA-Z'-]+/g)?.length ?? 0;
-
-  // Unique normalized words appearing in the text, to link known words.
-  const tokens = Array.from(
-    new Set((content.match(/[a-zA-Z'-]+/g) ?? []).map(normWord).filter(Boolean))
-  );
-
-  const known = tokens.length
-    ? await prisma.word.findMany({
-        where: { headword: { in: tokens } },
-        select: { id: true },
-      })
-    : [];
-
-  const article = await prisma.article.create({
-    data: {
-      title,
-      level,
-      cefr,
-      content,
-      wordCount,
-      source: b.source?.trim() || "用户导入",
-    },
-  });
-
-  if (known.length) {
-    await prisma.articleWord.createMany({
-      data: known.map((w) => ({ articleId: article.id, wordId: w.id })),
-    });
+  const json = tryParseJson(rawContent);
+  let articles: ReturnType<typeof buildArticleInput>[] = [];
+  if (json) {
+    const list = extractArticleList(json);
+    if (list && list.length) {
+      for (const item of list) {
+        const input = buildArticleInput(item, {
+          title: (b.title ?? "").trim(),
+          level: asExamType(
+            b.level && VALID_LEVELS.includes(b.level as ExamType) ? b.level : undefined,
+            "COMMON"
+          ),
+          cefr: Math.min(5, Math.max(1, Math.round(Number(b.cefr) || 1))),
+          content: "",
+          source: (b.source ?? "").trim() || "用户导入",
+        });
+        if (input.title && input.content) articles.push(input);
+      }
+    }
   }
 
-  return NextResponse.json({ ok: true, articleId: article.id });
+  if (articles.length === 0) {
+    // Legacy plain-text single article.
+    const input = buildArticleInput(null, {
+      title: (b.title ?? "").trim(),
+      level: asExamType(
+        b.level && VALID_LEVELS.includes(b.level as ExamType) ? b.level : undefined,
+        "COMMON"
+      ),
+      cefr: Math.min(5, Math.max(1, Math.round(Number(b.cefr) || 1))),
+      content: rawContent,
+      source: (b.source ?? "").trim() || "用户导入",
+    });
+    if (!input.title || !input.content) {
+      return NextResponse.json({ error: "标题和正文都不能为空" }, { status: 400 });
+    }
+    articles.push(input);
+  }
+
+  const createdIds: string[] = [];
+  for (const a of articles) {
+    const wordCount = a.content.match(/[a-zA-Z'-]+/g)?.length ?? 0;
+    const tokens = Array.from(
+      new Set((a.content.match(/[a-zA-Z'-]+/g) ?? []).map(normWord).filter(Boolean))
+    );
+    const known = tokens.length
+      ? await prisma.word.findMany({ where: { headword: { in: tokens } }, select: { id: true } })
+      : [];
+
+    const article = await prisma.article.create({
+      data: {
+        title: a.title,
+        level: a.level,
+        cefr: a.cefr,
+        content: a.content,
+        wordCount,
+        source: a.source,
+      },
+    });
+    createdIds.push(article.id);
+
+    if (known.length) {
+      await prisma.articleWord.createMany({
+        data: known.map((w: { id: string }) => ({ articleId: article.id, wordId: w.id })),
+      });
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    count: createdIds.length,
+    articleId: createdIds[0] ?? null,
+  });
 }

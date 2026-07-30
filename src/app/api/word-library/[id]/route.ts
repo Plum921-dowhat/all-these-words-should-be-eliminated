@@ -26,6 +26,7 @@ export async function GET(
               phoneticUs: true,
               pos: true,
               definitionCn: true,
+              examples: true,
             },
           },
         },

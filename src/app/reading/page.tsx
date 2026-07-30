@@ -59,7 +59,7 @@ export default function ReadingPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMsg({ ok: true, text: "导入成功！" });
+        setMsg({ ok: true, text: `导入成功，共 ${data.count ?? 1} 篇` });
         setForm({ title: "", level: "COMMON", cefr: 1, content: "" });
         setShowImport(false);
         await load();
@@ -69,6 +69,40 @@ export default function ReadingPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "").trim();
+      if (!text) return;
+
+      // Detect JSON import: prefill title/level/cefr and put raw text into content.
+      const patch: Partial<ImportForm> = { content: text };
+      try {
+        const js = JSON.parse(text);
+        const objs = Array.isArray(js)
+          ? js.filter((o) => o && typeof o === "object")
+          : js && typeof js === "object"
+          ? [js]
+          : [];
+        const o = objs[0];
+        if (o) {
+          if (o.title && !form.title) patch.title = String(o.title);
+          if (o.level && LEVELS.includes(o.level)) patch.level = o.level;
+          if (o.cefr != null) {
+            patch.cefr = Math.min(5, Math.max(1, Math.round(Number(o.cefr))));
+          }
+        }
+      } catch {
+        // Not JSON — keep as plain-text body (append if needed).
+        patch.content = form.content ? form.content + "\n" + text : text;
+      }
+      setForm((f) => ({ ...f, ...patch }));
+    };
+    reader.readAsText(file);
   }
 
   if (loading) return <p className="mt-10 text-center text-slate-400">加载中…</p>;
@@ -121,15 +155,20 @@ export default function ReadingPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-500">正文（必填）</label>
+            <label className="mb-1 block text-sm text-slate-500">正文（必填，也可粘贴 JSON 单篇/数组）</label>
             <textarea
               value={form.content}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-              placeholder="粘贴或输入英文阅读文本…"
+              placeholder={'粘贴英文阅读文本…\n\n或 JSON：\n{"title":"The Little Prince","level":"CET4","cefr":2,"content":"Once upon a time…"}'}
               rows={8}
               className="input w-full font-mono text-sm"
               required
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-500">或从文件导入（.txt / .json）</label>
+            <input type="file" accept=".txt,.json" onChange={onFile} className="block text-sm" />
+            <p className="mt-1 text-xs text-slate-400">JSON 文件将自动识别并预填标题/难度/CEFR，支持单篇对象或数组，正文可为字符串或段落数组。</p>
           </div>
           <div className="flex items-center gap-3">
             <button type="submit" disabled={submitting} className="btn-primary">

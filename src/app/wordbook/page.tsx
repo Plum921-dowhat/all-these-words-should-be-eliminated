@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { speak } from "@/lib/tts";
+import { WordFields } from "@/components/WordFields";
 
 interface WbItem {
   word: {
@@ -13,6 +14,7 @@ interface WbItem {
     audioUsUrl?: string | null;
     definitionCn?: string | null;
     pos?: string | null;
+    examples?: string | null;
   };
   status: string;
   familiarity: number;
@@ -60,6 +62,12 @@ export default function WordbookPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // 批量 JSON 导入状态
+  const [showBatch, setShowBatch] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [batchMsg, setBatchMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function load() {
     const res = await fetch("/api/words/list");
@@ -137,13 +145,58 @@ export default function WordbookPage() {
   }
   if (loading) return <p className="mt-10 text-center text-slate-400">加载中…</p>;
 
+  async function importBatch(e: React.FormEvent) {
+    e.preventDefault();
+    setBatchSubmitting(true);
+    setBatchMsg(null);
+    try {
+      const parsed = JSON.parse(batchText);
+      const res = await fetch("/api/words/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBatchMsg({ ok: true, text: `导入成功：新增 ${data.added}/${data.total} 个单词到生词本` });
+        setBatchText("");
+        await load();
+      } else {
+        setBatchMsg({ ok: false, text: data.error ?? "导入失败，请重试" });
+      }
+    } catch {
+      setBatchMsg({ ok: false, text: "JSON 解析失败，请检查格式" });
+    } finally {
+      setBatchSubmitting(false);
+    }
+  }
+
+  function onBatchFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setBatchText(String(reader.result ?? ""));
+    reader.readAsText(file);
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-800">我的生词本（{items.length}）</h1>
-        <button onClick={() => setShowForm((s) => !s)} className="btn-primary">
-          {showForm ? "收起" : "＋ 添加单词"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowForm((s) => !s); setShowBatch(false); }}
+            className="btn-primary"
+          >
+            {showForm ? "收起单条" : "＋ 添加单词"}
+          </button>
+          <button
+            onClick={() => { setShowBatch((s) => !s); setShowForm(false); }}
+            className="btn-ghost border border-brand-200 text-brand-700"
+          >
+            {showBatch ? "收起批量" : "＋ 批量 JSON 导入"}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -189,6 +242,35 @@ export default function WordbookPage() {
         </form>
       )}
 
+      {showBatch && (
+        <form onSubmit={importBatch} className="card mb-6 space-y-3">
+          <p className="text-sm text-slate-500">
+            批量加入生词本。粘贴 JSON 数组或 <code>{"{words:[...]}"}</code>，每条可为对象、
+            <code>"word | 释义"</code> 字符串或 <code>["word","释义"]</code> 二元组，兼容 <code>headword/word</code>、<code>definitionCn/def</code>、<code>phoneticUs/us</code> 等字段名。
+          </p>
+          <textarea
+            value={batchText}
+            onChange={(e) => setBatchText(e.target.value)}
+            placeholder={'[\n  {"headword":"apple","definitionCn":"苹果","phoneticUs":"/ˈæp.əl/","examples":"I eat an apple."},\n  {"headword":"book","definitionCn":"书"}\n]'}
+            rows={8}
+            className="input w-full font-mono text-sm"
+            required
+          />
+          <div>
+            <label className="mb-1 block text-sm text-slate-500">或从文件导入（.json / .txt）</label>
+            <input type="file" accept=".json,.txt" onChange={onBatchFile} className="block text-sm" />
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={batchSubmitting} className="btn-primary">
+              {batchSubmitting ? "导入中…" : "批量导入生词本"}
+            </button>
+            {batchMsg && (
+              <span className={batchMsg.ok ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{batchMsg.text}</span>
+            )}
+          </div>
+        </form>
+      )}
+
       {/* 统计 chips + 标签页 */}
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -231,6 +313,7 @@ export default function WordbookPage() {
                   )}
                 </div>
                 {it.word.definitionCn && <p className="mt-1 text-sm text-slate-600">{it.word.definitionCn}</p>}
+                <WordFields pos={it.word.pos} examples={it.word.examples} />
                 <p className="mt-1 text-xs text-slate-400">
                   熟悉度 {it.familiarity}/5 · 下次复习 {new Date(it.nextReviewAt).toLocaleDateString()}
                 </p>

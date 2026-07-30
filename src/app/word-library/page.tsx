@@ -54,8 +54,23 @@ export default function WordLibraryPage() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result ?? "");
-      setForm((f) => ({ ...f, content: f.content ? f.content + "\n" + text : text }));
+      const text = String(reader.result ?? "").trim();
+      if (!text) return;
+
+      // Detect JSON import: prefill metadata and put the raw text into content.
+      const patch: Partial<ImportForm> = { content: text };
+      try {
+        const js = JSON.parse(text);
+        if (js && typeof js === "object" && !Array.isArray(js)) {
+          if (js.title && !form.title) patch.title = String(js.title);
+          if (js.desc != null && !form.desc) patch.desc = String(js.desc);
+          if (js.level && LEVELS.includes(js.level)) patch.level = js.level;
+        }
+      } catch {
+        // Not JSON — keep it as plain-text line content (append if needed).
+        patch.content = form.content ? form.content + "\n" + text : text;
+      }
+      setForm((f) => ({ ...f, ...patch }));
     };
     reader.readAsText(file);
   }
@@ -134,19 +149,20 @@ export default function WordLibraryPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-500">单词清单（每行一个，支持 `单词 | 中文释义`）</label>
+            <label className="mb-1 block text-sm text-slate-500">单词清单（每行一个 `单词 | 中文释义`，也可粘贴 JSON 数组）</label>
             <textarea
               value={form.content}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-              placeholder={"apple | 苹果\nbook | 书"}
+              placeholder={'apple | 苹果\nbook | 书\n\n或 JSON：\n{"title":"考研核心词","words":[{"headword":"apple","definitionCn":"苹果"}]}'}
               rows={8}
               className="input w-full font-mono text-sm"
               required
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-500">或从文件导入（.txt / .csv）</label>
-            <input type="file" accept=".txt,.csv" onChange={onFile} className="block text-sm" />
+            <label className="mb-1 block text-sm text-slate-500">或从文件导入（.txt / .csv / .json）</label>
+            <input type="file" accept=".txt,.csv,.json" onChange={onFile} className="block text-sm" />
+            <p className="mt-1 text-xs text-slate-400">JSON 文件将自动识别并预填名称/难度/简介，支持 <code>{"{title, level, desc, words:[...]}"}</code> 或纯单词数组。</p>
           </div>
           <div className="flex items-center gap-3">
             <button type="submit" disabled={submitting} className="btn-primary">
@@ -161,7 +177,7 @@ export default function WordLibraryPage() {
 
       {libs.length === 0 && (
         <div className="card mt-4 text-center text-slate-500">
-          还没有导入的词库。点击右上角「＋ 导入词库」，粘贴单词清单或上传 .txt / .csv 文件。
+          还没有导入的词库。点击右上角「＋ 导入词库」，粘贴单词清单或上传 .txt / .csv / .json 文件。
         </div>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
