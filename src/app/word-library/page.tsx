@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { ROOT_LIBRARY_ID } from "@/lib/wordroot";
 
 interface Library {
   id: string;
@@ -193,6 +194,14 @@ export default function WordLibraryPage() {
             {l.desc && <p className="mt-1 text-xs text-slate-400">{l.desc}</p>}
           </Link>
         ))}
+        <Link key="roots" href={`/word-library/${ROOT_LIBRARY_ID}`} className="card hover:border-brand-300 hover:shadow">
+          <div className="flex items-center justify-between">
+            <span className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">词根</span>
+            <span className="text-xs text-slate-400">词根词缀</span>
+          </div>
+          <h3 className="mt-2 font-semibold text-slate-800">词根词缀库</h3>
+          <p className="mt-1 text-xs text-slate-400">英文词根 / 词缀速查</p>
+        </Link>
       </div>
     </div>
   );
