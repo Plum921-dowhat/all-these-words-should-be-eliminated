@@ -12,19 +12,6 @@ export function useDebounced<T>(value: T, delay = 150): T {
   return debounced;
 }
 
-// Case-insensitive multi-field "contains" filter.
-export function filterByQuery<T>(
-  items: T[],
-  q: string,
-  fields: (i: T) => Array<string | null | undefined>,
-): T[] {
-  const query = q.trim().toLowerCase();
-  if (!query) return items;
-  return items.filter((it) =>
-    fields(it).some((f) => (f ?? "").toLowerCase().includes(query)),
-  );
-}
-
 // Safe highlight: wraps matched substring in <mark>. Never uses
 // dangerouslySetInnerHTML, so it is XSS-safe.
 export function highlight(text: string | null | undefined, q: string): ReactNode {
