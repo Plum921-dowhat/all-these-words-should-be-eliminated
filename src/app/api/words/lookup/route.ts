@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lemmatize } from "@/lib/lemmatize";
 
 // Lookup a word's stored definition by headword (lowercased) and whether the
-// current user already has it in their wordbook.
+// current user already has it in their wordbook. Falls back to the lemmatized
+// form (spreads -> spread) when the exact form is not in the dictionary.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  const word = req.nextUrl.searchParams.get("word")?.trim().toLowerCase();
+  const raw = req.nextUrl.searchParams.get("word")?.trim();
+  if (!raw) return NextResponse.json({ word: null, inVocab: false });
+
+  const word = lemmatize(raw);
   if (!word) return NextResponse.json({ word: null, inVocab: false });
 
   const w = await prisma.word.findUnique({

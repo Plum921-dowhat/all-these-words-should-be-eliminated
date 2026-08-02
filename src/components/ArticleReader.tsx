@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { speak } from "@/lib/tts";
+import { lemmatize } from "@/lib/lemmatize";
 
 interface LookupWord {
   id: string;
@@ -36,7 +37,7 @@ export function ArticleReader({
   const paragraphs = content.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
 
   async function onClickToken(raw: string) {
-    const word = raw.toLowerCase().replace(/[^a-z'-]/g, "");
+    const word = lemmatize(raw);
     if (!word) return;
     setPopup({ word, loading: true, added: false });
 

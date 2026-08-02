@@ -8,6 +8,7 @@ import {
   extractArticleList,
   asExamType,
 } from "@/lib/importJson";
+import { lemmatize } from "@/lib/lemmatize";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -32,8 +33,31 @@ const VALID_LEVELS: ExamType[] = [
   "COMMON", "CET4", "CET6", "KY", "TEM4", "TEM8", "IELTS", "TOEFL",
 ];
 
-function normWord(s: string): string {
-  return s.trim().toLowerCase().replace(/[^a-z'-]/g, "");
+// 清洗抓取/粘贴来的文章正文，使其适配「按空行分段」的存储格式：
+//   - 折叠多余空白行，避免噪音段
+//   - 将单个换行（网页正文常见的软换行 / 导航列表相连的短行）合并为空格，
+//     仅当行本身是较短的「导航/列表噪音」才保留为独立段落的判断交由下游分段处理
+//   - 去除明显的导航噪音行（如连续的 `·`、`|` 分隔、纯大写菜单项）
+export function cleanArticle(raw: string): string {
+  if (!raw) return "";
+  const lines = raw.split(/\r?\n/);
+  const out: string[] = [];
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) {
+      out.push(""); // 保留空行作为分段信号
+      continue;
+    }
+    // 跳过明显导航噪音：短且含多个分隔符，或纯大写短菜单
+    if (/^[A-Z0-9 /|·•—-]{1,30}$/.test(line) && /[|·•—]/.test(line)) continue;
+    out.push(line);
+  }
+  let text = out.join("\n");
+  // 折叠连续空行为单个空行（即单个 \n\n 分段）
+  text = text.replace(/\n{3,}/g, "\n\n");
+  // 单换行连接相邻非空行（视为同一段落内的软换行）
+  text = text.replace(/([^\n])\n([^\n])/g, "$1 $2");
+  return text.trim();
 }
 
 // Turn an article object (or legacy fields) into { title, level, cefr, content, source }.
@@ -73,7 +97,7 @@ function buildArticleInput(raw: any, fallback: {
   const source =
     ((obj?.source?.toString().trim() ?? fallback.source) || "") || "用户导入";
 
-  return { title, level, cefr, content, source };
+  return { title, level, cefr, content: cleanArticle(content), source };
 }
 
 // Import one or more graded-reading articles submitted by the user.
@@ -138,7 +162,7 @@ export async function POST(req: NextRequest) {
   for (const a of articles) {
     const wordCount = a.content.match(/[a-zA-Z'-]+/g)?.length ?? 0;
     const tokens = Array.from(
-      new Set((a.content.match(/[a-zA-Z'-]+/g) ?? []).map(normWord).filter(Boolean))
+      new Set((a.content.match(/[a-zA-Z'-]+/g) ?? []).map(lemmatize).filter(Boolean))
     );
     const known = tokens.length
       ? await prisma.word.findMany({ where: { headword: { in: tokens } }, select: { id: true } })

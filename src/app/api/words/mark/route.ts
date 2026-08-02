@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lemmatize } from "@/lib/lemmatize";
 
 // Mark a word encountered while reading -> add to wordbook (NEW) + user_article_word.
 export async function POST(req: NextRequest) {
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
   const { word, articleId } = (await req.json()) as { word: string; articleId?: string };
   if (!word) return NextResponse.json({ error: "missing word" }, { status: 400 });
 
-  const headword = word.trim().toLowerCase().replace(/[^a-z'-]/g, "");
+  const headword = lemmatize(word);
   if (!headword) return NextResponse.json({ error: "invalid word" }, { status: 400 });
 
   const w = await prisma.word.findUnique({ where: { headword }, select: { id: true } });
