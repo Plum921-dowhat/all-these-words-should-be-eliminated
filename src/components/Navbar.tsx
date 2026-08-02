@@ -11,7 +11,7 @@ export function Navbar() {
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-2 font-bold text-brand-700">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-white">L</span>
-          LexiLearn
+          {process.env.NEXT_PUBLIC_APP_NAME}
         </Link>
         <div className="flex items-center gap-1 text-sm">
           <Link href="/reading" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">分级阅读</Link>

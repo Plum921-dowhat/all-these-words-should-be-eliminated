@@ -4,7 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "LexiLearn — 英语四六级 / 考研背单词 + 分级阅读",
+  title: "Happy Words — 英语四六级 / 考研背单词 + 分级阅读",
   description: "侧重于大学生的英语四六级 / 考研背单词 + 分级阅读平台",
 };
 
