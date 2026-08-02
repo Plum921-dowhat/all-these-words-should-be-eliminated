@@ -6,14 +6,15 @@ import { prisma } from "@/lib/prisma";
 // GET: library detail with its words.
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const userId = session.user.id;
 
+  const { id } = await params;
   const lib = await prisma.wordLibrary.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       words: {
         orderBy: { order: "asc" },
@@ -47,14 +48,15 @@ export async function GET(
 // POST: add every word in this library to the current user's wordbook (skip existing).
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const userId = session.user.id;
 
+  const { id } = await params;
   const lib = await prisma.wordLibrary.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: { words: { select: { wordId: true } } },
   });
   if (!lib || lib.userId !== userId) {
@@ -82,15 +84,16 @@ export async function POST(
 // records are kept intact.
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const lib = await prisma.wordLibrary.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const lib = await prisma.wordLibrary.findUnique({ where: { id } });
   if (!lib || lib.userId !== session.user.id) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.wordLibrary.delete({ where: { id: params.id } });
+  await prisma.wordLibrary.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

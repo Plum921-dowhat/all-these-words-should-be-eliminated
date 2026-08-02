@@ -7,11 +7,16 @@ import { ArticleReader } from "@/components/ArticleReader";
 export const dynamic = "force-dynamic";
 
 
-export default async function ArticlePage({ params }: { params: { id: string } }) {
+export default async function ArticlePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const userId = await getSessionId();
   const article = await prisma.article.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
-      userWords: { where: { userId: (await getSessionId()) ?? "" }, select: { wordId: true } },
+      userWords: {
+        where: userId ? { userId } : { userId: "no-user" },
+        select: { wordId: true },
+      },
     },
   });
   if (!article) notFound();

@@ -6,12 +6,12 @@ import { prisma } from "@/lib/prisma";
 // Remove a word from the current user's wordbook (does NOT delete the global Word).
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { wordId: string } }
+  { params }: { params: Promise<{ wordId: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const { wordId } = params;
+  const { wordId } = await params;
   if (!wordId) return NextResponse.json({ error: "invalid" }, { status: 400 });
 
   await prisma.userWordbook.deleteMany({
