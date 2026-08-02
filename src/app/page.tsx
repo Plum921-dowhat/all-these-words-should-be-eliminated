@@ -16,9 +16,9 @@ export default async function Home() {
   return (
     <div className="space-y-8">
       <section className="card bg-gradient-to-br from-brand-600 to-brand-700 text-white">
-        <h1 className="text-3xl font-bold">大学生英语四六级 · 考研 背单词 + 分级阅读</h1>
+        <h1 className="text-3xl font-bold">英语基础学习（重点于单词）</h1>
         <p className="mt-2 max-w-2xl opacity-90">
-          基于 SM-2 间隔重复算法的智能复习，配合分级阅读材料——读到生词一键加入生词本，闭环学习。
+          基于 SM-2 间隔重复算法的智能复习，着重于单词学习，配合分级阅读材料——读到生词一键加入生词本，闭环学习。
         </p>
         <div className="mt-5 flex gap-3">
           {session ? (

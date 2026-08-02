@@ -4,8 +4,8 @@ import { Navbar } from "@/components/Navbar";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "LexiLearn — 大学生四六级考研背单词与分级阅读",
-  description: "面向大学生的英语四六级 / 考研背单词 + 分级阅读平台",
+  title: "Plum单词本 — 英语基础学习（重点于单词）",
+  description: "侧重于大学生的英语四六级 / 考研背单词 + 分级阅读平台",
 };
 
 export default function RootLayout({
