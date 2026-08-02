@@ -153,6 +153,7 @@ model ReviewLog {
 model Article {
   id          String   @id @default(uuid())
   title       String
+  dek         String?  // 导语 / standfirst：从标题或正文首段自动剥离
   level       String   // 对应考试/难度
   cefr        Int      @default(1) // CEFR-like 1~5
   content     String   // 正文（含段落）

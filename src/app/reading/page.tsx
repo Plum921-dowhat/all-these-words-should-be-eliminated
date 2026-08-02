@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 interface Article {
   id: string;
   title: string;
+  dek?: string | null;
   level: string;
   cefr: number;
   wordCount: number;
@@ -23,9 +24,28 @@ const LEVELS = Object.keys(LEVEL_LABEL);
 
 interface ImportForm {
   title: string;
+  dek: string;
   level: string;
   cefr: number;
   content: string;
+}
+
+// 与后端一致的保守剥离预览：仅含换行/超长才拆分
+function previewDek(rawTitle: string): string {
+  if (!rawTitle) return "";
+  if (rawTitle.includes("\n")) {
+    const lines = rawTitle.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 2) {
+      const title = lines.reduce((a, b) => (a.length <= b.length ? a : b));
+      const rest = lines.filter((l) => l !== title).join(" ");
+      return rest.slice(0, 160).trim();
+    }
+  }
+  if (rawTitle.length > 80) {
+    const cut = rawTitle.search(/[.!?。！？:：]\s/);
+    if (cut > 0 && cut < rawTitle.length - 1) return rawTitle.slice(cut + 1).trim().slice(0, 160);
+  }
+  return "";
 }
 
 export default function ReadingPage() {
@@ -34,7 +54,7 @@ export default function ReadingPage() {
   const [loading, setLoading] = useState(true);
 
   const [showImport, setShowImport] = useState(false);
-  const [form, setForm] = useState<ImportForm>({ title: "", level: "COMMON", cefr: 1, content: "" });
+  const [form, setForm] = useState<ImportForm>({ title: "", dek: "", level: "COMMON", cefr: 1, content: "" });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -55,12 +75,12 @@ export default function ReadingPage() {
       const res = await fetch("/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, dek: form.dek || undefined }),
       });
       const data = await res.json();
       if (res.ok) {
         setMsg({ ok: true, text: `导入成功，共 ${data.count ?? 1} 篇` });
-        setForm({ title: "", level: "COMMON", cefr: 1, content: "" });
+        setForm({ title: "", dek: "", level: "COMMON", cefr: 1, content: "" });
         setShowImport(false);
         await load();
       } else {
@@ -127,6 +147,24 @@ export default function ReadingPage() {
               className="input w-full"
               required
             />
+            {(() => {
+              const autoDek = previewDek(form.title);
+              const showDek = form.dek || autoDek;
+              if (!showDek) return null;
+              return (
+                <div className="mt-2">
+                  <label className="mb-1 block text-xs text-slate-500">
+                    导语（dek，自动从标题剥离，可手动修改或清空）
+                  </label>
+                  <input
+                    value={showDek}
+                    onChange={(e) => setForm((f) => ({ ...f, dek: e.target.value }))}
+                    placeholder="导语将显示在标题下方"
+                    className="input w-full text-sm text-slate-600"
+                  />
+                </div>
+              );
+            })()}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -198,6 +236,7 @@ export default function ReadingPage() {
                 {p?.finished && <span className="text-xs text-emerald-600">已读完</span>}
               </div>
               <h3 className="mt-2 font-semibold text-slate-800">{a.title}</h3>
+              {a.dek && <p className="mt-1 line-clamp-2 text-sm text-slate-400">{a.dek}</p>}
               <p className="mt-1 text-xs text-slate-400">
                 {a.wordCount} 词 {a.source ? `· ${a.source}` : ""}
                 {p && !p.finished && p.progress > 0 && ` · 已读 ${Math.round(p.progress * 100)}%`}

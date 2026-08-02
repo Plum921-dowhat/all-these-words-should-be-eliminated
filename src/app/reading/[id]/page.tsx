@@ -27,6 +27,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
     <ArticleReader
       articleId={article.id}
       title={article.title}
+      dek={article.dek}
       content={article.content}
       markedIds={markedIds}
     />

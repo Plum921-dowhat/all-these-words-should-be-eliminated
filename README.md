@@ -19,7 +19,7 @@
 
 | 分类 | 选型 |
 |------|------|
-| 框架 | Next.js 14.2.5（App Router, React 18, TypeScript 5） |
+| 框架 | Next.js 16.2.12（App Router, Turbopack, React 19, TypeScript 5） |
 | 样式 | Tailwind CSS 3 + 自定义工具类（`globals.css` 中的 `card` / `btn` / `btn-primary`） |
 | ORM / 数据库 | Prisma 5.18（默认 SQLite，可选 PostgreSQL） |
 | 认证 | NextAuth.js 4（Credentials 登录 + 注册，JWT 会话） |
@@ -30,10 +30,11 @@
 
 ## 环境要求
 
-- Node.js ≥ 18（建议 LTS）
+- Node.js ≥ 18（建议 LTS，Windows 需 Node 18.18+）
 - npm（随 Node 自带）
 - 本地默认使用 **SQLite**，开箱即用，**无需 Docker / WSL**
 - （可选）Docker Desktop，仅在你希望用 PostgreSQL 时才需要
+- 在 **Windows** 上：`next dev` 使用 Turbopack，默认不调整堆内存即可正常工作（已通过 `serverExternalPackages` 把 next-auth / prisma / bcryptjs 外部化，避免编译期 OOM）。**不要**在 `dev` 脚本里盲目加大 `NODE_OPTIONS=--max-old-space-size`，否则反而会因为大堆导致 GC 停顿、开发服务器卡顿。
 
 ---
 
@@ -112,16 +113,15 @@ npm run db:push
 
 | 脚本 | 说明 |
 |------|------|
-| `npm run dev` | 启动 Next.js 开发服务器（端口 3000） |
-| `npm run build` | 先 `prisma generate`，再 `next build` 生产构建 |
+| `npm run dev` | 启动 Next.js 开发服务器（Turbopack，端口 3000）；**不**调整堆内存，保持开发流畅 |
+| `npm run build` | 先 `prisma generate`，再以 `NODE_OPTIONS=--max-old-space-size=2048` 运行 `next build`（一次性生产构建，堆上限温和提到 2GB） |
 | `npm run start` | 运行生产构建后的服务 |
-| `npm run lint` | ESLint 检查（构建时已设置 `ignoreDuringBuilds`，不会阻断打包） |
 | `npm run postinstall` | 依赖安装后自动执行 `prisma generate` |
 | `npm run db:push` | 将 Prisma schema 同步到数据库（建表） |
 | `npm run db:seed` | 执行种子脚本（`prisma/seed/index.ts`，使用 `tsx` 运行） |
 | `npm run db:studio` | 打开 Prisma Studio 可视化管理数据库 |
 
-> `next.config.mjs` 中设置了 `serverActions.bodySizeLimit = "2mb"`，用于支持较大的导入请求。
+> `next.config.mjs` 中设置了 `serverActions.bodySizeLimit = "2mb"`，用于支持较大的导入请求；并通过 `serverExternalPackages` 把 next-auth / @prisma/client / bcryptjs 外部化，规避 Turbopack 在 Windows 上的编译期 OOM（`HashMap::Initialize`）。
 
 ---
 
@@ -257,6 +257,13 @@ A：参考「使用 Docker 运行 PostgreSQL（可选）」一节，修改 `prov
 
 **Q：导入支持哪些格式？**
 A：JSON 与纯文本行均支持，详见 [`docs/import-json.md`](./docs/import-json.md)。
+
+**Q：Windows 上 `next dev` / `next build` 报 `FATAL ERROR: Out of memory: HashMap::Initialize`？**
+A：这是 Next 16 Turbopack 在 Windows + 默认 V8 堆（~2GB）下编译含 `next-auth` 的路由模块图时，堆初始化失败的已知问题（devlog.txt 记录过）。本项目已做两件事缓解，无需你手动改代码：
+1. **`next.config.mjs` 通过 `serverExternalPackages` 把 `@prisma/client` / `bcryptjs` 外部化**，让 Turbopack 在运行时用原生 `require` 加载它们，而不是把它们塞进单一编译单元 —— 这是治本手段，不影响 dev 流畅度。（注意：不要外部化 `next-auth`，否则会破坏 Turbopack 对 `"use client"` 组件的 React 实例解析，导致 `Invalid hook call`。）
+2. 堆内存只在 `npm run build`（`next build`）时温和提到 `2048` MB；**`dev` 脚本刻意不提堆**，避免大堆引发 GC 停顿、开发服务器卡顿甚至被系统杀进程。
+
+如果你仍遇到 OOM：先确认 `next.config.mjs` 的 `serverExternalPackages` 未被删；必要时可临时把 `build` 的 `--max-old-space-size` 调到 3072；或在排查阶段改用 `next build` 单独验证而非 `dev`。
 
 ---
 

@@ -33,7 +33,7 @@ const IRREGULAR: Record<string, string> = {
   ate: "eat", forbade: "forbid", saw: "see", flew: "fly",
   knew: "know", grew: "grow", threw: "throw", drew: "draw",
   lay: "lie", awoken: "awake", awoke: "awake",
-  begun: "begin", begun: "begin", drunk: "drink",
+  begun: "begin", began: "begin", drunk: "drink",
   sung: "sing", rung: "ring", sunk: "sink", swum: "swim",
   worn: "wear", torn: "tear", borne: "bear",
   built: "build", felt: "feel", kept: "keep", left: "leave",

@@ -22,11 +22,13 @@ const WORD_RE = /[A-Za-z][A-Za-z'-]*/g;
 export function ArticleReader({
   articleId,
   title,
+  dek,
   content,
   markedIds,
 }: {
   articleId: string;
   title: string;
+  dek?: string | null;
   content: string;
   markedIds: Set<string>;
 }) {
@@ -89,6 +91,7 @@ export function ArticleReader({
   return (
     <div className="relative">
       <h1 className="mb-4 text-2xl font-bold text-slate-800">{title}</h1>
+      {dek && <p className="mb-4 text-base leading-7 text-slate-400">{dek}</p>}
       <article className="space-y-4 text-lg leading-8 text-slate-700">
         {paragraphs.map((p, i) => (
           <p key={i}>{renderParagraph(p)}</p>

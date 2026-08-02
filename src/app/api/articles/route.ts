@@ -17,6 +17,7 @@ export async function GET() {
     select: {
       id: true,
       title: true,
+      dek: true,
       level: true,
       cefr: true,
       wordCount: true,
@@ -60,6 +61,43 @@ export function cleanArticle(raw: string): string {
   return text.trim();
 }
 
+// 保守地从标题中剥离导语（dek / standfirst）：
+//   - 仅当 title 含换行，或单行长度 > MAX_TITLE_LEN 且含句末标点时才尝试拆分
+//   - 正常短标题绝不误伤，返回 null
+// 返回 { title, dek }，dek 总长截断到 MAX_DEK_LEN。
+const MAX_TITLE_LEN = 80;
+const MAX_DEK_LEN = 160;
+
+export function extractDek(rawTitle: string): { title: string; dek: string | null } {
+  if (!rawTitle) return { title: "", dek: null };
+
+  // 情形 1：含换行 → 多行粘贴（如「标题\n导语」或「标题\n副标题\n导语」）
+  if (rawTitle.includes("\n")) {
+    const lines = rawTitle.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 2) {
+      // 取最短的非空行作为标题（标题通常比导语句短），其余累计为 dek
+      const title = lines.reduce((a, b) => (a.length <= b.length ? a : b));
+      const rest = lines.filter((l) => l !== title).join(" ");
+      const dek = rest.length > MAX_DEK_LEN ? rest.slice(0, MAX_DEK_LEN).trim() : rest;
+      return { title, dek: dek || null };
+    }
+    return { title: rawTitle.trim(), dek: null };
+  }
+
+  // 情形 2：单行但超长且含句末分隔 → 在最后一个句末切断
+  if (rawTitle.length > MAX_TITLE_LEN) {
+    const cut = rawTitle.search(/[.!?。！？:：]\s/);
+    if (cut > 0 && cut < rawTitle.length - 1) {
+      const title = rawTitle.slice(0, cut + 1).trim();
+      let dek = rawTitle.slice(cut + 1).trim();
+      if (dek.length > MAX_DEK_LEN) dek = dek.slice(0, MAX_DEK_LEN).trim();
+      return { title, dek: dek || null };
+    }
+  }
+
+  return { title: rawTitle, dek: null };
+}
+
 // Turn an article object (or legacy fields) into { title, level, cefr, content, source }.
 // Per-article fields take precedence; the supplied fallback (form fields) is only
 // used when the article itself does not provide a value.
@@ -72,7 +110,7 @@ function buildArticleInput(raw: any, fallback: {
 }) {
   const obj = raw && typeof raw === "object" ? raw : null;
 
-  const title =
+  let title =
     (obj?.title ?? obj?.name ?? obj?.heading ?? fallback.title)?.toString().trim() || "";
 
   let bodySource: string | null = null;
@@ -97,7 +135,20 @@ function buildArticleInput(raw: any, fallback: {
   const source =
     ((obj?.source?.toString().trim() ?? fallback.source) || "") || "用户导入";
 
-  return { title, level, cefr, content: cleanArticle(content), source };
+  // dek 优先级：对象自带 dek（方案 B 解析脚本产出）> 从标题自动剥离
+  let dek: string | null = null;
+  if (obj?.dek != null) {
+    const d = String(obj.dek).trim();
+    dek = d ? (d.length > MAX_DEK_LEN ? d.slice(0, MAX_DEK_LEN).trim() : d) : null;
+  }
+  if (!dek) {
+    dek = extractDek(title).dek;
+    // 若剥离出了 dek，需要把 title 还原成剔除 dek 后的版本
+    const stripped = extractDek(title).title;
+    if (dek) title = stripped;
+  }
+
+  return { title, dek, level, cefr, content: cleanArticle(content), source };
 }
 
 // Import one or more graded-reading articles submitted by the user.
@@ -171,6 +222,7 @@ export async function POST(req: NextRequest) {
     const article = await prisma.article.create({
       data: {
         title: a.title,
+        dek: a.dek,
         level: a.level,
         cefr: a.cefr,
         content: a.content,
