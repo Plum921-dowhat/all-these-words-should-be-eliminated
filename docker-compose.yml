@@ -4,9 +4,9 @@ services:
     container_name: evilwords-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: lexilearn
-      POSTGRES_PASSWORD: lexilearn
-      POSTGRES_DB: lexilearn
+      POSTGRES_USER: evilwords
+      POSTGRES_PASSWORD: evilwords
+      POSTGRES_DB: evilwords
     ports:
       - "5433:5432"
     volumes:
