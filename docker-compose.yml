@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: lexilearn-postgres
+    container_name: evilwords-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: lexilearn
@@ -10,7 +10,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - lexilearn_pg:/var/lib/postgresql/data
+      - evilwords_pg:/var/lib/postgresql/data
 
 volumes:
-  lexilearn_pg:
+  evilwords_pg:

@@ -1,4 +1,4 @@
-# LexiLearn
+# Evil Words
 
 面向大学生的英语词汇 + 分级阅读学习平台，重点覆盖**四六级（CET-4 / CET-6）**、**考研（KY）**等考试场景。核心能力包括：系统/自建词书背单词、基于 SM-2 遗忘曲线的智能复习（SRS）、阅读文章内置查词与一键加入生词本、以及用户自定义词库与阅读的导入。
 
@@ -6,36 +6,12 @@
 
 ## 核心功能
 
-- **词书背单词**：内置按考试（四六级、考研等）划分的系统词书，也可导入自建词库。
+- **词书背单词**：已内置基础词库，也可导入自建词库。
 - **SRS 智能复习**：采用 SM-2 遗忘曲线算法，根据熟悉度、连对次数、难度系数与间隔天数安排下一次复习（评价档位：`AGAIN / HARD / GOOD / EASY`）。
 - **分级阅读**：按考试/难度（CEFR 1~5）组织文章，阅读时点击单词即可查本地释义，并可将生词一键加入生词本（自动进入 SRS 队列）。
 - **生词本**：统一查看、批量导入（JSON / 纯文本）、复习管理。
 - **导入生态**：词库、单词、阅读三类入口均支持 **JSON** 与**纯文本行**两种格式（详见「数据导入」一节）。
 - **学习统计**：累计学习量、已掌握数、今日复习数、连续打卡天数等。
-
----
-
-## 技术栈
-
-| 分类 | 选型 |
-|------|------|
-| 框架 | Next.js 16.2.12（App Router, Turbopack, React 19, TypeScript 5） |
-| 样式 | Tailwind CSS 3 + 自定义工具类（`globals.css` 中的 `card` / `btn` / `btn-primary`） |
-| ORM / 数据库 | Prisma 5.18（默认 SQLite，可选 PostgreSQL） |
-| 认证 | NextAuth.js 4（Credentials 登录 + 注册，JWT 会话） |
-| 密码哈希 | bcryptjs |
-| 状态管理 | Zustand、React Query（@tanstack/react-query） |
-
----
-
-## 环境要求
-
-- Node.js ≥ 18（建议 LTS，Windows 需 Node 18.18+）
-- npm（随 Node 自带）
-- 本地默认使用 **SQLite**，开箱即用，**无需 Docker / WSL**
-- （可选）Docker Desktop，仅在你希望用 PostgreSQL 时才需要
-- 在 **Windows** 上：`next dev` 使用 Turbopack，默认不调整堆内存即可正常工作（已通过 `serverExternalPackages` 把 next-auth / prisma / bcryptjs 外部化，避免编译期 OOM）。**不要**在 `dev` 脚本里盲目加大 `NODE_OPTIONS=--max-old-space-size`，否则反而会因为大堆导致 GC 停顿、开发服务器卡顿。
-
 ---
 
 ## 快速开始（本地，SQLite）
@@ -71,35 +47,9 @@
 > 环境变量见 `.env`（已随仓库提供默认值，本地直接可用）：
 > - `DATABASE_URL="file:./dev.db"` —— SQLite 文件路径
 > - `NEXTAUTH_SECRET` / `NEXTAUTH_URL` —— 认证相关；生产环境务必把 `NEXTAUTH_SECRET` 换成 `openssl rand -base64 32` 生成的随机串
-> - `NEXT_PUBLIC_APP_NAME` —— 站点名称（默认 `LexiLearn`）
+> - `NEXT_PUBLIC_APP_NAME` —— 站点名称（默认 `Evil Words`）
 
----
 
-## 使用 Docker 运行 PostgreSQL（可选）
-
-如果你希望使用 PostgreSQL 而非 SQLite（例如更接近生产环境），项目提供了 `docker-compose.yml`：
-
-- 镜像：`postgres:16-alpine`
-- 本机端口映射到 **5433**（避免与你已有 PostgreSQL 的 5432 冲突）
-- 库名 / 用户 / 密码均为 `lexilearn`
-
-步骤：
-
-```bash
-docker compose up -d
-```
-
-然后将 `.env` 中的 `DATABASE_URL` 改为：
-
-```
-DATABASE_URL="postgresql://lexilearn:lexilearn@localhost:5433/lexilearn"
-```
-
-并执行（注意 SQLite 与 PostgreSQL 的字段类型差异，切换后需重新 push）：
-
-```bash
-npm run db:push
-```
 
 ### SQLite vs PostgreSQL 说明
 
