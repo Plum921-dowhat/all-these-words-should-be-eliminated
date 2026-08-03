@@ -65,10 +65,14 @@ export function parseWordLine(line: string): WordInput | null {
     const posList = rest ? splitPos(rest) : [];
     const out: WordInput = { headword: head };
     if (phonetic) out.phoneticUs = phonetic;
-    // Multi-sense goes into structured `pos`; leave `definitionCn` empty to
-    // avoid duplicating the same text in the plain-text area.
-    if (posList.length > 0) out.pos = JSON.stringify(posList);
-    else if (rest) out.definitionCn = rest;
+    // Multi-sense goes into structured `pos`; also backfill `definitionCn`
+    // with the first sense so the plain-text lookup popup can render it.
+    if (posList.length > 0) {
+      out.pos = JSON.stringify(posList);
+      out.definitionCn = posList[0].def || null;
+    } else if (rest) {
+      out.definitionCn = rest;
+    }
     return out;
   }
 

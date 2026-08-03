@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { speak } from "@/lib/tts";
 import { lemmatize } from "@/lib/lemmatize";
+import { parsePosJson } from "@/lib/format";
 
 interface LookupWord {
   id: string;
@@ -113,6 +114,16 @@ export function ArticleReader({
                   <button onClick={() => speak(popup.word)} className="btn-ghost px-2 py-1">🔊</button>
                 </div>
                 {popup.info?.definitionCn && <p className="mt-2 text-slate-700">{popup.info.definitionCn}</p>}
+                {!popup.info?.definitionCn && popup.info?.pos && (
+                  <div className="mt-2 space-y-1">
+                    {parsePosJson(popup.info.pos).map((p, i) => (
+                      <div key={i} className="text-slate-700">
+                        {p.pos && <span className="font-medium text-brand-700">{p.pos} </span>}
+                        {p.def}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {popup.info?.definitionEn && <p className="mt-1 text-sm text-slate-500">{popup.info.definitionEn}</p>}
                 {!popup.info && <p className="mt-2 text-slate-400">词库暂无该词释义。</p>}
                 {status === "authenticated" ? (
