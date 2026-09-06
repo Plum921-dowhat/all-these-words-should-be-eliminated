@@ -1,4 +1,32 @@
 services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* 在构建期内联进客户端 bundle，须在 build args 传递
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Evil Words}
+    container_name: evilwords-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 容器网络内通过服务名 postgres 访问（宿主侧映射为 5433）
+      DATABASE_URL: postgresql://evilwords:evilwords@postgres:5432/evilwords?schema=public
+      # 生产环境务必在宿主机 .env 中设置真实的 NEXTAUTH_SECRET
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Evil Words}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   postgres:
     image: postgres:16-alpine
     container_name: evilwords-postgres
@@ -11,6 +39,11 @@ services:
       - "5433:5432"
     volumes:
       - evilwords_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evilwords -d evilwords"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   evilwords_pg:

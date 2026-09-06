@@ -1,4 +1,4 @@
-import { PrismaClient } from "../../node_modules/.prisma/client-new";
+import { PrismaClient } from "@prisma/client";
 import type { ExamType } from "../../src/lib/enums";
 import { CET4, CET6, KY, ARTICLES, type SeedWord } from "./data";
 import { enrichSeed } from "./enrich";

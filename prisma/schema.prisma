@@ -1,10 +1,10 @@
 // LexiLearn — English vocab (CET-4/6, KY) + graded reading platform
-// Database: SQLite (local dev, zero external dependency). The Postgres-style
-// enums are stored as STRING columns; allowed values live in src/lib/enums.ts.
+// Database: PostgreSQL (docker-compose.yml 的 postgres 服务，宿主侧 5433)。
+// The Postgres-style enums are stored as STRING columns; allowed values live
+// in src/lib/enums.ts.
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client-new"
 }
 
 datasource db {
